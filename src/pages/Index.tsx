@@ -377,7 +377,7 @@ const Index = () => {
                         }`}
                       >
                         {isDone ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                          <CheckCircle2 className="w-5 h-5 text-success" />
                         ) : isCurrent ? (
                           <Loader2 className="w-5 h-5 text-primary animate-spin" />
                         ) : (
