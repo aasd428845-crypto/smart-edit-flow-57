@@ -291,9 +291,9 @@ const Index = () => {
                   )}
 
                   {videoUrl && (
-                    <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/30 rounded-lg text-sm">
-                      <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0" />
-                      <span className="text-green-700 dark:text-green-300">تم الرفع بنجاح</span>
+                    <div className="flex items-center gap-2 p-3 bg-success/10 rounded-lg text-sm">
+                      <CheckCircle2 className="w-5 h-5 text-success shrink-0" />
+                      <span className="text-success">تم الرفع بنجاح</span>
                     </div>
                   )}
                 </div>
