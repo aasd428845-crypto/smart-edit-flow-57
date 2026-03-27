@@ -403,7 +403,7 @@ const Index = () => {
                     href={outputUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center justify-center gap-2 w-full h-12 rounded-lg bg-green-600 hover:bg-green-700 text-white font-semibold text-base transition-colors"
+                    className="flex items-center justify-center gap-2 w-full h-12 rounded-lg bg-success hover:bg-success/90 text-success-foreground font-semibold text-base transition-colors"
                   >
                     <Download className="w-5 h-5" />
                     تحميل الفيديو النهائي
