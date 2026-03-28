@@ -14,32 +14,85 @@ export type Database = {
   }
   public: {
     Tables: {
+      notifications: {
+        Row: {
+          created_at: string | null
+          id: string
+          level: string | null
+          message: string
+          project_id: string | null
+          read: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          level?: string | null
+          message: string
+          project_id?: string | null
+          read?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          level?: string | null
+          message?: string
+          project_id?: string | null
+          read?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       projects: {
         Row: {
+          content_type: string | null
           created_at: string
+          duration_seconds: number | null
+          error: string | null
           id: string
           output_url: string | null
           status: string
+          template_id: string | null
+          transcript: string | null
           updated_at: string
           user_command: string | null
+          user_email: string | null
           video_url: string | null
         }
         Insert: {
+          content_type?: string | null
           created_at?: string
+          duration_seconds?: number | null
+          error?: string | null
           id?: string
           output_url?: string | null
           status?: string
+          template_id?: string | null
+          transcript?: string | null
           updated_at?: string
           user_command?: string | null
+          user_email?: string | null
           video_url?: string | null
         }
         Update: {
+          content_type?: string | null
           created_at?: string
+          duration_seconds?: number | null
+          error?: string | null
           id?: string
           output_url?: string | null
           status?: string
+          template_id?: string | null
+          transcript?: string | null
           updated_at?: string
           user_command?: string | null
+          user_email?: string | null
           video_url?: string | null
         }
         Relationships: []
