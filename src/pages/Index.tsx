@@ -101,12 +101,6 @@ const Index = () => {
   const handleUploadToVimeo = async () => {
     if (!file) return;
 
-    const token = localStorage.getItem("vimeo_access_token");
-    if (!token) {
-      toast.error("يرجى إدخال Vimeo Access Token في صفحة الإعدادات أولاً");
-      return;
-    }
-
     setIsUploading(true);
     try {
       // Create project in DB
@@ -119,10 +113,9 @@ const Index = () => {
       if (dbError) throw dbError;
       setProjectId(project.id);
 
-      // Upload to Vimeo via Edge Function
+      // Upload to Vimeo via Edge Function (token is server-side)
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("token", token);
       formData.append("project_id", project.id);
 
       const projectId_env = import.meta.env.VITE_SUPABASE_PROJECT_ID;

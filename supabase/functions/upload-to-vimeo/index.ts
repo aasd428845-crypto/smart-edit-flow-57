@@ -14,13 +14,22 @@ Deno.serve(async (req) => {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File;
-    const token = formData.get("token") as string;
     const projectId = formData.get("project_id") as string;
 
-    if (!file || !token || !projectId) {
+    if (!file || !projectId) {
       return new Response(
-        JSON.stringify({ error: "file, token, and project_id are required" }),
+        JSON.stringify({ error: "file and project_id are required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Use server-side Vimeo credentials
+    const vimeoToken = Deno.env.get("VIMEO_ACCESS_TOKEN");
+    if (!vimeoToken) {
+      console.error("VIMEO_ACCESS_TOKEN not configured");
+      return new Response(
+        JSON.stringify({ error: "Vimeo credentials not configured on server" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -28,7 +37,7 @@ Deno.serve(async (req) => {
     const createRes = await fetch("https://api.vimeo.com/me/videos", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${vimeoToken}`,
         "Content-Type": "application/json",
         Accept: "application/vnd.vimeo.*+json;version=3.4",
       },
@@ -45,14 +54,14 @@ Deno.serve(async (req) => {
       const err = await createRes.text();
       console.error("Vimeo create error:", err);
       return new Response(
-        JSON.stringify({ error: "Failed to create Vimeo upload ticket" }),
+        JSON.stringify({ error: "Failed to create Vimeo upload ticket", details: err }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const createData = await createRes.json();
     const uploadLink = createData.upload.upload_link;
-    const videoUri = createData.uri; // e.g. /videos/123456
+    const videoUri = createData.uri;
     const videoUrl = `https://vimeo.com${videoUri}`;
 
     // Step 2: Upload file via TUS
