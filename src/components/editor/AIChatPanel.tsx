@@ -1,18 +1,24 @@
 import { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, X } from 'lucide-react';
-import { useEditorStore, statusMessages } from '@/store/editorStore';
+import { Send, Paperclip, Activity } from 'lucide-react';
+import { useEditorStore, statusMessages, getBackendUrl } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 const quickSuggestions = [
-  'نظّف الصوت',
-  'أضف ترجمة',
-  'أزل الخلفية',
-  'تحسين الألوان',
+  { label: 'ما ينقص المنصة؟', message: 'ما ينقص المنصة؟' },
+  { label: 'تحليل سينمائي', message: 'قم بتحليل الفيديو الحالي وأخبرني توصياتك للمونتاج السينمائي' },
+  { label: 'مكتبات مفقودة؟', message: 'ما المكتبات الناقصة التي تمنعك من تنفيذ أوامري؟' },
+  { label: 'نظّف الصوت', message: 'نظّف الصوت' },
 ];
 
 export const AIChatPanel = () => {
-  const { messages, addMessage, projectId, videoUrl, currentTime, selectedTemplate, contentType, setProjectStatus } = useEditorStore();
+  const {
+    messages, addMessage, projectId, videoSource, sourceType,
+    currentTime, selectedTemplate, contentType, setProjectStatus,
+    cinematicMode,
+  } = useEditorStore();
   const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -60,28 +66,62 @@ export const AIChatPanel = () => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  const sendCommand = async (command: string) => {
-    if (!command.trim() || !projectId || !videoUrl) return;
-    addMessage({ type: 'user', text: command });
+  const sendMessage = async (text: string) => {
+    if (!text.trim()) return;
+    addMessage({ type: 'user', text });
     setInput('');
+    setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/process', {
+      const res = await fetch(`${getBackendUrl()}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          video_url: videoUrl,
-          command,
-          current_time: currentTime,
-          project_id: projectId,
-          template_id: selectedTemplate?.id || null,
-          content_type: contentType || null,
+          message: text,
+          conversation_history: messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.text })),
+          project_context: {
+            video_source: videoSource,
+            source_type: sourceType,
+            project_id: projectId,
+            current_time: currentTime,
+            template_id: selectedTemplate?.id || null,
+            content_type: contentType,
+            cinematic: cinematicMode,
+          },
         }),
       });
-      if (!response.ok) throw new Error('فشل الاتصال');
-      addMessage({ type: 'ai', text: 'بدأت المعالجة...', status: 'processing' });
+      if (!res.ok) throw new Error('فشل الاتصال');
+      const data = await res.json();
+      addMessage({ type: 'ai', text: data.reply || data.message || 'تم' });
+
+      if (data.needs_video && !videoSource) {
+        toast.warning('⚠️ هذا الأمر يحتاج فيديو. ارفع فيديو أولاً.');
+      }
     } catch {
-      addMessage({ type: 'error', text: 'فشل الاتصال بخادم المعالجة' });
+      addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const checkSystem = async () => {
+    addMessage({ type: 'user', text: '🔍 فحص المنصة...' });
+    try {
+      const res = await fetch(`${getBackendUrl()}/system/check`);
+      const data = await res.json();
+      const summary = `🖥️ حالة المنصة: ${data.status === 'healthy' ? '✅ سليمة' : '⚠️ تحتاج تعديل'}
+
+📦 المكتبات الناقصة: ${data.missing_libraries?.length || 0}
+${data.missing_libraries?.map((m: any) => `• ${m.name}: \`${m.install_cmd}\``).join('\n') || 'لا شيء ناقص'}
+
+📁 الأصول:
+${Object.entries(data.assets || {}).map(([k, v]) => `• ${k}: ${v ? '✅' : '❌'}`).join('\n')}
+
+💡 التوصيات:
+${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.action}`).join('\n') || 'لا توصيات'}`;
+      addMessage({ type: 'ai', text: summary });
+    } catch {
+      addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح' });
     }
   };
 
@@ -92,12 +132,19 @@ export const AIChatPanel = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-lg">🤖</span>
-            <span className="font-bold text-foreground">المساعد الذكي</span>
+            <span className="font-bold text-foreground">مونتاجي AI</span>
           </div>
+          <button
+            onClick={checkSystem}
+            className="flex items-center gap-1 px-3 py-1 rounded-lg bg-muted text-xs text-muted-foreground hover:text-primary border border-border hover:border-gold-dim transition-all"
+          >
+            <Activity size={12} />
+            فحص المنصة
+          </button>
         </div>
         <div className="flex items-center gap-4 mt-2 text-xs">
           <span className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground'}`} />
             {isConnected ? 'متصل' : 'غير متصل'}
           </span>
           <span className="text-muted-foreground">
@@ -127,7 +174,7 @@ export const AIChatPanel = () => {
                   msg.type === 'user'
                     ? 'bg-muted border border-gold-dim/30 text-foreground'
                     : msg.type === 'error'
-                    ? 'bg-danger/20 border border-danger/30 text-red-300'
+                    ? 'bg-destructive/20 border border-destructive/30 text-destructive'
                     : 'bg-secondary text-foreground'
                 }`}
               >
@@ -146,6 +193,17 @@ export const AIChatPanel = () => {
             )}
           </div>
         ))}
+        {isLoading && (
+          <div className="ml-0 mr-auto max-w-[85%] animate-fade-in-up">
+            <div className="bg-secondary text-foreground p-3 rounded-lg text-sm">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" />
+                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.15s]" />
+                <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.3s]" />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Quick suggestions */}
@@ -153,11 +211,11 @@ export const AIChatPanel = () => {
         <div className="px-3 pb-2 flex flex-wrap gap-1.5">
           {quickSuggestions.map((s) => (
             <button
-              key={s}
-              onClick={() => sendCommand(s)}
+              key={s.label}
+              onClick={() => sendMessage(s.message)}
               className="px-3 py-1 rounded-full bg-muted text-xs text-secondary-foreground hover:bg-gold-dim/30 hover:text-primary transition-all border border-border"
             >
-              {s}
+              {s.label}
             </button>
           ))}
         </div>
@@ -171,13 +229,13 @@ export const AIChatPanel = () => {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && sendCommand(input)}
-          placeholder="اكتب أمراً..."
+          onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
+          placeholder="اكتب أمراً أو اسأل سؤالاً..."
           className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <button
-          onClick={() => sendCommand(input)}
-          disabled={!input.trim()}
+          onClick={() => sendMessage(input)}
+          disabled={!input.trim() || isLoading}
           className="text-primary hover:text-gold-light transition-colors disabled:text-muted-foreground"
         >
           <Send size={18} />
