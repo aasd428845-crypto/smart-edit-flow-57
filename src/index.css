@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,29 +6,29 @@
 
 @layer base {
   :root {
-    --background: 240 20% 4%;
-    --foreground: 40 20% 91%;
+    --background: 240 25% 4%;
+    --foreground: 38 25% 93%;
 
-    --card: 240 18% 8%;
-    --card-foreground: 40 20% 91%;
+    --card: 240 22% 8%;
+    --card-foreground: 38 25% 93%;
 
-    --popover: 240 18% 10%;
-    --popover-foreground: 40 20% 91%;
+    --popover: 240 22% 10%;
+    --popover-foreground: 38 25% 93%;
 
-    --primary: 43 55% 54%;
-    --primary-foreground: 240 20% 4%;
+    --primary: 43 55% 55%;
+    --primary-foreground: 240 25% 4%;
 
-    --secondary: 240 18% 12%;
-    --secondary-foreground: 40 15% 75%;
+    --secondary: 240 20% 12%;
+    --secondary-foreground: 38 15% 75%;
 
-    --muted: 240 15% 15%;
-    --muted-foreground: 40 8% 35%;
+    --muted: 240 18% 15%;
+    --muted-foreground: 248 8% 50%;
 
-    --accent: 43 55% 54%;
-    --accent-foreground: 240 20% 4%;
+    --accent: 43 55% 55%;
+    --accent-foreground: 240 25% 4%;
 
-    --destructive: 0 50% 30%;
-    --destructive-foreground: 40 20% 91%;
+    --destructive: 0 65% 50%;
+    --destructive-foreground: 38 25% 93%;
 
     --border: 240 15% 18%;
     --input: 240 15% 18%;
@@ -36,21 +36,21 @@
 
     --radius: 0.5rem;
 
-    --gold: 43 55% 54%;
-    --gold-light: 43 65% 66%;
+    --gold: 43 55% 55%;
+    --gold-light: 43 70% 66%;
     --gold-dim: 40 35% 33%;
     --border-gold: 40 25% 18%;
     --processing: 210 50% 23%;
-    --success: 150 45% 33%;
-    --warning: 40 55% 30%;
-    --danger: 0 55% 30%;
+    --success: 145 63% 49%;
+    --warning: 36 77% 52%;
+    --danger: 4 70% 57%;
 
-    --sidebar-background: 240 18% 6%;
-    --sidebar-foreground: 40 20% 91%;
-    --sidebar-primary: 43 55% 54%;
-    --sidebar-primary-foreground: 240 20% 4%;
+    --sidebar-background: 240 22% 6%;
+    --sidebar-foreground: 38 25% 93%;
+    --sidebar-primary: 43 55% 55%;
+    --sidebar-primary-foreground: 240 25% 4%;
     --sidebar-accent: 240 15% 12%;
-    --sidebar-accent-foreground: 40 20% 91%;
+    --sidebar-accent-foreground: 38 25% 93%;
     --sidebar-border: 240 15% 18%;
     --sidebar-ring: 43 35% 30%;
   }
@@ -67,10 +67,9 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: 'Tajawal', sans-serif;
+    font-family: 'IBM Plex Sans Arabic', sans-serif;
   }
 
-  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;

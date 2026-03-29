@@ -1,81 +1,91 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowRight, Eye, EyeOff, Upload, TestTube } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Upload, TestTube, Key } from 'lucide-react';
 import { toast } from 'sonner';
-
-const BACKEND_URL = 'http://localhost:8000';
+import { getBackendUrl } from '@/store/editorStore';
 
 interface APISettings {
-  vimeoAccessToken: string;
+  anthropicKey: string;
+  vimeoToken: string;
   openaiKey: string;
   geminiKey: string;
-  backendUrl: string;
 }
 
 const assetTypes = [
-  { type: 'logo', label: 'شعار الشركة', accept: '.png,.svg', maxSizeMB: 5 },
-  { type: 'intro', label: 'فيديو المقدمة', accept: '.mp4,.mov', maxSizeMB: 50 },
-  { type: 'outro', label: 'فيديو الخاتمة', accept: '.mp4,.mov', maxSizeMB: 50 },
-  { type: 'background_music', label: 'موسيقى خلفية', accept: '.mp3,.wav,.aac', maxSizeMB: 20 },
-  { type: 'sound_effect', label: 'مؤثرات صوتية', accept: '.mp3,.wav', maxSizeMB: 10 },
+  { type: 'logo', label: 'شعار الشركة (PNG)', accept: '.png,.jpg,.svg', maxSizeMB: 5 },
+  { type: 'intro', label: 'مقدمة الفيديو (MP4)', accept: '.mp4,.mov', maxSizeMB: 50 },
+  { type: 'outro', label: 'خاتمة الفيديو (MP4)', accept: '.mp4,.mov', maxSizeMB: 50 },
+  { type: 'background_music', label: 'موسيقى خلفية (MP3)', accept: '.mp3,.wav,.aac', maxSizeMB: 20 },
 ];
 
 const Settings = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'api' | 'assets' | 'appearance'>('api');
+  const [activeTab, setActiveTab] = useState<'api' | 'assets' | 'admin'>('api');
   const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
+  const [isAdmin, setIsAdmin] = useState(localStorage.getItem('isAdmin') === 'true');
 
   const [settings, setSettings] = useState<APISettings>(() => {
-    try {
-      const saved = localStorage.getItem('montaji_settings');
-      return saved ? JSON.parse(atob(saved)) : { vimeoAccessToken: '', openaiKey: '', geminiKey: '', backendUrl: BACKEND_URL };
-    } catch {
-      return { vimeoAccessToken: '', openaiKey: '', geminiKey: '', backendUrl: BACKEND_URL };
-    }
+    return {
+      anthropicKey: localStorage.getItem('anthropic_key') || '',
+      vimeoToken: localStorage.getItem('vimeo_token') || '',
+      openaiKey: localStorage.getItem('openai_key') || '',
+      geminiKey: localStorage.getItem('gemini_key') || '',
+    };
   });
 
   const saveSettings = () => {
-    localStorage.setItem('montaji_settings', btoa(JSON.stringify(settings)));
-    toast.success('تم حفظ الإعدادات');
+    localStorage.setItem('anthropic_key', settings.anthropicKey);
+    localStorage.setItem('vimeo_token', settings.vimeoToken);
+    localStorage.setItem('openai_key', settings.openaiKey);
+    localStorage.setItem('gemini_key', settings.geminiKey);
+    toast.success('✅ تم حفظ الإعدادات');
   };
 
-  const testConnection = async (key: string) => {
+  const testConnection = async () => {
     toast.loading('جارٍ الاختبار...', { id: 'test' });
     try {
-      if (key === 'backendUrl') {
-        await fetch(settings.backendUrl + '/health');
-        toast.success('الاتصال ناجح!', { id: 'test' });
-      } else {
-        toast.success('المفتاح محفوظ (الاختبار غير متاح)', { id: 'test' });
-      }
+      await fetch(`${getBackendUrl()}/health`);
+      toast.success('✅ الاتصال ناجح!', { id: 'test' });
     } catch {
-      toast.error('فشل الاتصال', { id: 'test' });
+      toast.error('❌ فشل الاتصال بالسيرفر المحلي', { id: 'test' });
     }
   };
 
   const uploadAsset = async (file: File, assetType: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('asset_type', assetType);
+    const form = new FormData();
+    form.append('file', file);
+    form.append('asset_type', assetType);
     try {
-      await fetch(`${settings.backendUrl}/upload-asset`, { method: 'POST', body: formData });
-      toast.success('تم رفع الملف بنجاح');
+      const res = await fetch(`${getBackendUrl()}/upload_asset`, { method: 'POST', body: form });
+      const data = await res.json();
+      toast.success(`✅ تم رفع الملف (${data.size_mb || ''} MB)`);
     } catch {
       toast.error('فشل رفع الملف');
     }
   };
 
+  const toggleAdmin = () => {
+    const newVal = !isAdmin;
+    if (newVal) {
+      localStorage.setItem('isAdmin', 'true');
+    } else {
+      localStorage.removeItem('isAdmin');
+    }
+    setIsAdmin(newVal);
+    toast.success(newVal ? '✅ تم تفعيل وضع المشرف' : 'تم إلغاء وضع المشرف');
+  };
+
   const tabs = [
     { id: 'api' as const, label: '🔑 مفاتيح API' },
     { id: 'assets' as const, label: '📁 الأصول' },
-    { id: 'appearance' as const, label: '🎨 المظهر' },
+    { id: 'admin' as const, label: '🔒 المشرف' },
   ];
 
   const apiFields = [
-    { key: 'vimeoAccessToken', label: 'Vimeo Access Token', hint: 'احصل على المفتاح من vimeo.com/settings' },
+    { key: 'anthropicKey', label: 'Anthropic API Key', hint: 'للشات الذكي — من console.anthropic.com' },
+    { key: 'vimeoToken', label: 'Vimeo Access Token', hint: 'من vimeo.com/settings' },
     { key: 'openaiKey', label: 'OpenAI API Key', hint: 'من platform.openai.com' },
     { key: 'geminiKey', label: 'Gemini API Key', hint: 'من ai.google.dev' },
-    { key: 'backendUrl', label: 'عنوان الخادم', hint: 'افتراضي: http://localhost:8000' },
   ];
 
   return (
@@ -124,18 +134,25 @@ const Settings = () => {
                       {showTokens[field.key] ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                  <button
-                    onClick={() => testConnection(field.key)}
-                    className="px-3 py-2 rounded-lg bg-muted text-muted-foreground hover:text-primary border border-border hover:border-gold-dim text-sm transition-all"
-                  >
-                    <TestTube size={14} />
-                  </button>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">💡 {field.hint}</p>
               </div>
             ))}
+
+            {/* Test connection */}
+            <div className="bg-card border border-border rounded-xl p-4">
+              <label className="text-sm font-bold text-foreground block mb-2">اختبار اتصال السيرفر المحلي</label>
+              <div className="flex gap-2 items-center">
+                <span className="text-sm text-muted-foreground flex-1 font-mono">{getBackendUrl()}</span>
+                <button onClick={testConnection} className="px-4 py-2 rounded-lg bg-muted text-muted-foreground hover:text-primary border border-border hover:border-gold-dim text-sm transition-all flex items-center gap-1">
+                  <TestTube size={14} />
+                  اختبار
+                </button>
+              </div>
+            </div>
+
             <button onClick={saveSettings} className="w-full py-2.5 rounded-lg gold-gradient text-primary-foreground font-bold text-sm">
-              حفظ الإعدادات
+              💾 حفظ المفاتيح
             </button>
           </div>
         )}
@@ -160,9 +177,21 @@ const Settings = () => {
           </div>
         )}
 
-        {activeTab === 'appearance' && (
-          <div className="bg-card border border-border rounded-xl p-6">
-            <p className="text-muted-foreground text-sm">إعدادات المظهر ستكون متاحة قريباً.</p>
+        {activeTab === 'admin' && (
+          <div className="bg-card border border-border rounded-xl p-6 space-y-4">
+            <h3 className="text-foreground font-bold text-lg">🔒 حساب المشرف</h3>
+            <p className="text-muted-foreground text-sm">تفعيل وضع المشرف يتيح لك الوصول إلى لوحة الإدارة وعرض جميع المشاريع.</p>
+            <button
+              onClick={toggleAdmin}
+              className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all ${
+                isAdmin
+                  ? 'bg-destructive text-destructive-foreground hover:opacity-90'
+                  : 'gold-gradient text-primary-foreground hover:opacity-90'
+              }`}
+            >
+              <Key size={16} className="inline ml-2" />
+              {isAdmin ? 'إلغاء وضع المشرف' : '🔑 تفعيل وضع المشرف'}
+            </button>
           </div>
         )}
       </div>
