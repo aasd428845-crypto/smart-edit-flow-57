@@ -22,6 +22,8 @@ export interface TemplateCard {
 interface EditorState {
   videoUrl: string | null;
   videoFile: File | null;
+  videoSource: string | null;
+  sourceType: 'blob' | 'local' | 'remote' | null;
   videoDuration: number;
   currentTime: number;
   isPlaying: boolean;
@@ -29,12 +31,14 @@ interface EditorState {
   projectStatus: string | null;
   selectedTemplate: TemplateCard | null;
   contentType: string | null;
+  cinematicMode: boolean;
   messages: ChatMessage[];
   isProcessing: boolean;
   isUploading: boolean;
 
   setVideoUrl: (url: string | null) => void;
   setVideoFile: (file: File | null) => void;
+  setVideoSource: (src: string | null, type: 'blob' | 'local' | 'remote' | null) => void;
   setVideoDuration: (d: number) => void;
   setCurrentTime: (t: number) => void;
   setIsPlaying: (p: boolean) => void;
@@ -42,15 +46,22 @@ interface EditorState {
   setProjectStatus: (s: string | null) => void;
   setSelectedTemplate: (t: TemplateCard | null) => void;
   setContentType: (c: string | null) => void;
+  setCinematicMode: (c: boolean) => void;
   setIsProcessing: (p: boolean) => void;
   setIsUploading: (u: boolean) => void;
   addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   clearMessages: () => void;
 }
 
+const BACKEND_URL = 'http://localhost:8000';
+
+export const getBackendUrl = () => BACKEND_URL;
+
 export const useEditorStore = create<EditorState>((set) => ({
   videoUrl: null,
   videoFile: null,
+  videoSource: null,
+  sourceType: null,
   videoDuration: 0,
   currentTime: 0,
   isPlaying: false,
@@ -58,11 +69,12 @@ export const useEditorStore = create<EditorState>((set) => ({
   projectStatus: null,
   selectedTemplate: null,
   contentType: null,
+  cinematicMode: false,
   messages: [
     {
       id: 'welcome',
       type: 'ai',
-      text: 'مرحباً! ارفع فيديو وأخبرني ماذا تريد أن أفعل.',
+      text: 'مرحباً! أنا مونتاجي AI. يمكنني مساعدتك في المونتاج حتى بدون رفع فيديو. اسألني أي شيء! 🎬',
       timestamp: new Date(),
     },
   ],
@@ -71,6 +83,7 @@ export const useEditorStore = create<EditorState>((set) => ({
 
   setVideoUrl: (url) => set({ videoUrl: url }),
   setVideoFile: (file) => set({ videoFile: file }),
+  setVideoSource: (src, type) => set({ videoSource: src, sourceType: type }),
   setVideoDuration: (d) => set({ videoDuration: d }),
   setCurrentTime: (t) => set({ currentTime: t }),
   setIsPlaying: (p) => set({ isPlaying: p }),
@@ -78,6 +91,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   setProjectStatus: (s) => set({ projectStatus: s }),
   setSelectedTemplate: (t) => set({ selectedTemplate: t, contentType: t?.contentType || null }),
   setContentType: (c) => set({ contentType: c }),
+  setCinematicMode: (c) => set({ cinematicMode: c }),
   setIsProcessing: (p) => set({ isProcessing: p }),
   setIsUploading: (u) => set({ isUploading: u }),
   addMessage: (m) =>
@@ -93,7 +107,7 @@ export const useEditorStore = create<EditorState>((set) => ({
         {
           id: 'welcome',
           type: 'ai',
-          text: 'مرحباً! ارفع فيديو وأخبرني ماذا تريد أن أفعل.',
+          text: 'مرحباً! أنا مونتاجي AI. يمكنني مساعدتك في المونتاج حتى بدون رفع فيديو. اسألني أي شيء! 🎬',
           timestamp: new Date(),
         },
       ],
@@ -101,12 +115,12 @@ export const useEditorStore = create<EditorState>((set) => ({
 }));
 
 export const defaultTemplates: TemplateCard[] = [
-  { id: 'conference_001', name: 'مؤتمرات', nameEn: 'Conference', contentType: 'conference', color: '#1a3a5a', icon: '🎤', description: 'مناسب للمؤتمرات والندوات' },
-  { id: 'wedding_001', name: 'أفراح', nameEn: 'Wedding', contentType: 'wedding', color: '#3a2a1a', icon: '💍', description: 'ألوان دافئة رومانسية' },
-  { id: 'ad_001', name: 'إعلانات', nameEn: 'Advertisement', contentType: 'ad', color: '#2a1a3a', icon: '📣', description: 'حيوي ولافت للنظر' },
-  { id: 'corporate_001', name: 'شركات', nameEn: 'Corporate', contentType: 'corporate', color: '#1a2a1a', icon: '🏢', description: 'احترافي ورسمي' },
-  { id: 'tiktok_001', name: 'تيك توك', nameEn: 'TikTok', contentType: 'social_media', color: '#2a1a2a', icon: '🎵', description: 'عمودي وسريع الإيقاع' },
-  { id: 'documentary_001', name: 'وثائقي', nameEn: 'Documentary', contentType: 'documentary', color: '#1a1a1a', icon: '🎥', description: 'سينمائي وعميق' },
+  { id: 'conference_001', name: 'مؤتمرات', nameEn: 'Conference', contentType: 'conference', color: '#1a3a5c', icon: '🎙️', description: 'مناسب للمؤتمرات والندوات' },
+  { id: 'wedding_001', name: 'زفاف ذهبي', nameEn: 'Wedding', contentType: 'wedding', color: '#3a2a0a', icon: '💍', description: 'ألوان دافئة رومانسية' },
+  { id: 'ad_001', name: 'إعلان نيون', nameEn: 'Advertisement', contentType: 'ad', color: '#1a0a2a', icon: '📢', description: 'حيوي ولافت للنظر' },
+  { id: 'tiktok_001', name: 'تيك توك', nameEn: 'TikTok', contentType: 'social_media', color: '#0a1a1a', icon: '🎵', description: 'عمودي وسريع الإيقاع' },
+  { id: 'cinema_001', name: 'سينمائي', nameEn: 'Cinematic', contentType: 'default', color: '#1a1a1a', icon: '🎞️', description: 'مونتاج سينمائي احترافي', isPopular: true },
+  { id: 'documentary_001', name: 'وثائقي', nameEn: 'Documentary', contentType: 'documentary', color: '#0a1a0a', icon: '🎥', description: 'سينمائي وعميق' },
 ];
 
 export const statusMessages: Record<string, string> = {
