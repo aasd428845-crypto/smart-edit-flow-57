@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, Trash2, Download, Eye, Bell } from 'lucide-react';
+import { ArrowRight, Trash2, Download, Bell, RefreshCw } from 'lucide-react';
+import { getBackendUrl } from '@/store/editorStore';
 import { toast } from 'sonner';
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -17,42 +18,43 @@ const statusConfig: Record<string, { label: string; color: string; bg: string }>
 
 const AdminPanel = () => {
   const navigate = useNavigate();
+  const isAdmin = localStorage.getItem('isAdmin') === 'true';
   const [filter, setFilter] = useState('all');
 
-  const { data: projects, refetch } = useQuery({
+  useEffect(() => {
+    if (!isAdmin) navigate('/');
+  }, [isAdmin]);
+
+  const { data: projects, refetch, isLoading } = useQuery({
     queryKey: ['admin-projects'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('projects')
-        .select('*')
-        .order('created_at', { ascending: false });
-      return data || [];
+      try {
+        const res = await fetch(`${getBackendUrl()}/admin/projects`);
+        const data = await res.json();
+        return data.projects || [];
+      } catch {
+        const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+        return data || [];
+      }
     },
   });
 
   const { data: notifications } = useQuery({
     queryKey: ['notifications'],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('notifications')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
+      const { data } = await supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(20);
       return data || [];
     },
   });
 
-  // Realtime notifications
   useEffect(() => {
     const channel = supabase
       .channel('admin-notifications')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
-        toast.info('🔔 إشعار جديد');
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload: any) => {
+        toast.info(`🔔 ${payload.new.message}`);
         refetch();
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
-        refetch();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => refetch())
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
@@ -86,9 +88,10 @@ const AdminPanel = () => {
     return `منذ ${Math.floor(hours / 24)} يوم`;
   };
 
+  if (!isAdmin) return null;
+
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
       <div className="h-14 flex items-center justify-between px-6 bg-secondary border-b border-border">
         <div className="flex items-center gap-3">
           <span className="text-lg">🛡️</span>
@@ -108,13 +111,13 @@ const AdminPanel = () => {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-muted-foreground">📊 إجمالي</span><span className="text-foreground">{stats.total}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">⏳ معالجة</span><span className="text-primary">{stats.processing}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">✅ مكتمل</span><span className="text-green-400">{stats.completed}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">❌ فشل</span><span className="text-red-400">{stats.failed}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">✅ مكتمل</span><span className="text-success">{stats.completed}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">❌ فشل</span><span className="text-destructive">{stats.failed}</span></div>
             </div>
           </div>
 
           <div>
-            <h3 className="text-sm font-bold text-foreground mb-3">الإشعارات</h3>
+            <h3 className="text-sm font-bold text-foreground mb-3">🔔 الإشعارات</h3>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {notifications?.slice(0, 5).map((n: any) => (
                 <div key={n.id} className="text-xs text-muted-foreground p-2 bg-muted rounded">
@@ -129,9 +132,9 @@ const AdminPanel = () => {
           </div>
         </div>
 
-        {/* Projects List */}
+        {/* Projects */}
         <div className="p-6">
-          <div className="flex gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-4">
             {['all', 'processing', 'completed', 'failed'].map((f) => (
               <button
                 key={f}
@@ -141,6 +144,9 @@ const AdminPanel = () => {
                 {f === 'all' ? 'الكل' : f === 'processing' ? 'قيد المعالجة' : f === 'completed' ? 'جاهز' : 'فشل'}
               </button>
             ))}
+            <button onClick={() => refetch()} className="p-1.5 rounded-lg bg-card border border-border text-muted-foreground hover:text-primary transition-all mr-auto">
+              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+            </button>
           </div>
 
           <div className="space-y-3">
@@ -153,8 +159,8 @@ const AdminPanel = () => {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-lg">🎬</span>
                         <span className="font-bold text-foreground text-sm">{p.id.slice(0, 8)}...</span>
+                        {p.content_type && <span className="text-xs text-muted-foreground">({p.content_type})</span>}
                       </div>
-                      {p.user_email && <p className="text-xs text-muted-foreground">👤 {p.user_email}</p>}
                       <div className="flex items-center gap-2 mt-2">
                         <span className="px-2 py-0.5 rounded text-xs font-bold" style={{ color: sc.color, backgroundColor: sc.bg }}>
                           {sc.label}
@@ -168,7 +174,7 @@ const AdminPanel = () => {
                           <Download size={14} />
                         </a>
                       )}
-                      <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded bg-muted hover:bg-danger/30 text-muted-foreground hover:text-red-400 transition-all">
+                      <button onClick={() => handleDelete(p.id)} className="p-1.5 rounded bg-muted hover:bg-destructive/30 text-muted-foreground hover:text-destructive transition-all">
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -176,9 +182,7 @@ const AdminPanel = () => {
                 </div>
               );
             })}
-            {!filtered?.length && (
-              <p className="text-center text-muted-foreground py-8">لا توجد مشاريع</p>
-            )}
+            {!filtered?.length && <p className="text-center text-muted-foreground py-8">لا توجد مشاريع</p>}
           </div>
         </div>
       </div>
