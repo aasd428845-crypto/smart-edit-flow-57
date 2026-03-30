@@ -47,7 +47,7 @@ const Settings = () => {
   const testConnection = async () => {
     toast.loading('جارٍ الاختبار...', { id: 'test' });
     try {
-      await fetch(`${getBackendUrl()}/health`);
+      await fetch(getEdgeFunctionUrl('system-check'));
       toast.success('✅ الاتصال ناجح!', { id: 'test' });
     } catch {
       toast.error('❌ فشل الاتصال بالسيرفر المحلي', { id: 'test' });
