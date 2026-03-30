@@ -92,6 +92,7 @@ export const AIChatPanel = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
+          agent: selectedAgent,
           conversation_history: messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.text })),
           project_context: {
             video_source: videoSource,
