@@ -87,7 +87,7 @@ export const AIChatPanel = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${getBackendUrl()}/chat`, {
+      const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
