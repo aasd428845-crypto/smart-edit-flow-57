@@ -159,7 +159,7 @@ ${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.act
     } catch (err: any) {
       setIsConnected(false);
       if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+        addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم. تحقق من اتصالك بالإنترنت.' });
       } else {
         addMessage({ type: 'error', text: `⚠️ خطأ في فحص النظام: ${err?.message || 'غير معروف'}` });
       }
