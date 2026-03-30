@@ -183,6 +183,35 @@ ${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.act
             فحص المنصة
           </button>
         </div>
+
+        {/* Agent Selector */}
+        <div className="relative mt-2">
+          <button
+            onClick={() => setShowAgentMenu(!showAgentMenu)}
+            className="flex items-center justify-between w-full px-3 py-1.5 rounded-lg bg-muted border border-border hover:border-gold-dim text-xs text-foreground transition-all"
+          >
+            <span className="flex items-center gap-2">
+              <span>{aiAgents.find(a => a.id === selectedAgent)?.icon}</span>
+              <span>اختر الوكيل: {aiAgents.find(a => a.id === selectedAgent)?.label}</span>
+            </span>
+            <ChevronDown size={14} className={`text-muted-foreground transition-transform ${showAgentMenu ? 'rotate-180' : ''}`} />
+          </button>
+          {showAgentMenu && (
+            <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+              {aiAgents.map((agent) => (
+                <button
+                  key={agent.id}
+                  onClick={() => { setSelectedAgent(agent.id); setShowAgentMenu(false); }}
+                  className={`flex items-center gap-2 w-full px-3 py-2 text-xs text-right hover:bg-muted transition-colors ${selectedAgent === agent.id ? 'bg-muted text-primary font-bold' : 'text-foreground'}`}
+                >
+                  <span>{agent.icon}</span>
+                  <span>{agent.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-4 mt-2 text-xs">
           <span className="flex items-center gap-1">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground'}`} />
