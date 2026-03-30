@@ -123,7 +123,7 @@ export const AIChatPanel = () => {
       }
     } catch (err: any) {
       if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+        addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم. تحقق من اتصالك بالإنترنت.' });
       } else {
         addMessage({ type: 'error', text: `⚠️ خطأ غير متوقع: ${err?.message || 'غير معروف'}` });
       }
