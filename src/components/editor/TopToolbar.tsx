@@ -60,7 +60,7 @@ export const TopToolbar = () => {
       });
       if (!res.ok) throw new Error('فشل الاتصال بالخادم');
       const data = await res.json();
-      addMessage({ type: 'ai', text: `✅ ${data.message || 'تم إرسال الأمر'}`, status: 'processing' });
+      addMessage({ type: 'ai', text: `✅ ${data.reply || data.message || 'تم إرسال الأمر'}`, status: 'processing' });
       toast.success('تم إرسال الأمر');
     } catch (err: any) {
       addMessage({ type: 'error', text: `⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app` });
