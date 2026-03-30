@@ -1,4 +1,4 @@
-import { useEditorStore, getBackendUrl } from '@/store/editorStore';
+import { useEditorStore, getEdgeFunctionUrl } from '@/store/editorStore';
 import { toast } from 'sonner';
 import { Music, Film, FileText, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useRef } from 'react';
