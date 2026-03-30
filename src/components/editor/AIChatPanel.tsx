@@ -135,7 +135,7 @@ export const AIChatPanel = () => {
   const checkSystem = async () => {
     addMessage({ type: 'user', text: '🔍 فحص المنصة...' });
     try {
-      const res = await fetch(`${getBackendUrl()}/system/check`);
+      const res = await fetch(getEdgeFunctionUrl('system-check'));
       const data = await res.json();
       setIsConnected(true);
 

@@ -147,7 +147,7 @@ const Settings = () => {
             <div className="bg-card border border-border rounded-xl p-4">
               <label className="text-sm font-bold text-foreground block mb-2">اختبار اتصال السيرفر المحلي</label>
               <div className="flex gap-2 items-center">
-                <span className="text-sm text-muted-foreground flex-1 font-mono">{getBackendUrl()}</span>
+                <span className="text-sm text-muted-foreground flex-1 font-mono">{getEdgeFunctionUrl('system-check')}</span>
                 <button onClick={testConnection} className="px-4 py-2 rounded-lg bg-muted text-muted-foreground hover:text-primary border border-border hover:border-gold-dim text-sm transition-all flex items-center gap-1">
                   <TestTube size={14} />
                   اختبار

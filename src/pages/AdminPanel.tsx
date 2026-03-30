@@ -27,14 +27,8 @@ const AdminPanel = () => {
   const { data: projects, refetch, isLoading } = useQuery({
     queryKey: ['admin-projects'],
     queryFn: async () => {
-      try {
-        const res = await fetch(`${getBackendUrl()}/admin/projects`);
-        const data = await res.json();
-        return data.projects || [];
-      } catch {
-        const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
-        return data || [];
-      }
+      const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+      return data || [];
     },
   });
 

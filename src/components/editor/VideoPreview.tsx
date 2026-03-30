@@ -71,24 +71,11 @@ export const VideoPreview = () => {
 
   const handleLocalPath = async () => {
     if (!localPath.trim()) return;
-    try {
-      const res = await fetch(`${getBackendUrl()}/check-local-path`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: localPath }),
-      });
-      const data = await res.json();
-      if (data.exists) {
-        setVideoSource(localPath, 'local');
-        await createProject();
-        toast.success(`✅ ملف موجود (${data.size_mb} MB). جاهز للمعالجة!`);
-        addMessage({ type: 'ai', text: `✅ ملف محلي جاهز: ${localPath} (${data.size_mb} MB)` });
-      } else {
-        toast.error('❌ الملف غير موجود. تحقق من المسار');
-      }
-    } catch {
-      toast.error('⚠️ السيرفر المحلي غير متاح');
-    }
+    // Local path check not available in cloud mode — treat as direct source
+    setVideoSource(localPath, 'local');
+    await createProject();
+    toast.success(`✅ تم تسجيل المسار المحلي. جاهز للمعالجة!`);
+    addMessage({ type: 'ai', text: `✅ ملف محلي مسجّل: ${localPath}` });
   };
 
   const handleUrlSubmit = async () => {

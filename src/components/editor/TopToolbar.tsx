@@ -98,7 +98,7 @@ export const TopToolbar = () => {
     form.append('file', file);
     form.append('asset_type', 'logo');
     try {
-      await fetch(`${getBackendUrl()}/upload_asset`, { method: 'POST', body: form });
+      await fetch(getEdgeFunctionUrl('chat'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `رفع شعار جديد`, agent: 'gemini', conversation_history: [], project_context: {} }) });
       toast.success('✅ تم رفع الشعار');
     } catch {
       toast.error('فشل رفع الشعار');

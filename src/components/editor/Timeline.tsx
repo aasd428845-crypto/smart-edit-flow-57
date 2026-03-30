@@ -59,8 +59,8 @@ export const Timeline = () => {
       addMessage({ type: 'ai', text: `✅ ${data.reply || data.message || 'تم إرسال طلب المعالجة'}`, status: 'processing' });
       toast.success('تم إرسال طلب المعالجة');
     } catch {
-      addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
-      toast.error('فشل الاتصال بالسيرفر المحلي');
+      addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم' });
+      toast.error('فشل الاتصال بالخادم');
     } finally {
       setIsProcessing(false);
     }
