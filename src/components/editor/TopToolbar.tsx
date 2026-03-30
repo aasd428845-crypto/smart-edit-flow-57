@@ -63,8 +63,8 @@ export const TopToolbar = () => {
       addMessage({ type: 'ai', text: `✅ ${data.reply || data.message || 'تم إرسال الأمر'}`, status: 'processing' });
       toast.success('تم إرسال الأمر');
     } catch (err: any) {
-      addMessage({ type: 'error', text: `⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app` });
-      toast.error('فشل الاتصال بالسيرفر المحلي');
+      addMessage({ type: 'error', text: `⚠️ فشل الاتصال بالخادم` });
+      toast.error('فشل الاتصال بالخادم');
     } finally {
       setIsProcessing(false);
     }
