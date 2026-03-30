@@ -56,7 +56,7 @@ export const Timeline = () => {
       });
       if (!res.ok) throw new Error('فشل الاتصال');
       const data = await res.json();
-      addMessage({ type: 'ai', text: `✅ ${data.message || 'تم إرسال طلب المعالجة'}`, status: 'processing' });
+      addMessage({ type: 'ai', text: `✅ ${data.reply || data.message || 'تم إرسال طلب المعالجة'}`, status: 'processing' });
       toast.success('تم إرسال طلب المعالجة');
     } catch {
       addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
