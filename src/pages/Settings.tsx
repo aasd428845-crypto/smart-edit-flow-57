@@ -89,6 +89,7 @@ const Settings = () => {
     { key: 'vimeoToken', label: 'Vimeo Access Token', hint: 'من vimeo.com/settings' },
     { key: 'openaiKey', label: 'OpenAI API Key', hint: 'من platform.openai.com' },
     { key: 'geminiKey', label: 'Gemini API Key', hint: 'من ai.google.dev' },
+    { key: 'deepseekKey', label: 'DeepSeek API Key', hint: 'من platform.deepseek.com' },
   ];
 
   return (
