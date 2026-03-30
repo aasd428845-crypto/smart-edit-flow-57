@@ -31,6 +31,7 @@ const Settings = () => {
       vimeoToken: localStorage.getItem('vimeo_token') || '',
       openaiKey: localStorage.getItem('openai_key') || '',
       geminiKey: localStorage.getItem('gemini_key') || '',
+      deepseekKey: localStorage.getItem('deepseek_key') || '',
     };
   });
 
