@@ -22,11 +22,12 @@ export const AIChatPanel = () => {
   const {
     messages, addMessage, projectId, videoSource, sourceType,
     currentTime, selectedTemplate, contentType, setProjectStatus,
-    cinematicMode,
+    cinematicMode, selectedAgent, setSelectedAgent,
   } = useEditorStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [showAgentMenu, setShowAgentMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Check backend connectivity on mount
