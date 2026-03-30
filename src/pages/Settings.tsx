@@ -61,7 +61,7 @@ const Settings = () => {
     try {
       const res = await fetch(getEdgeFunctionUrl('system-check'));
       const data = await res.json();
-      toast.success(`✅ تم رفع الملف (${data.size_mb || ''} MB)`);
+      toast.success(`✅ تم رفع الملف`);
     } catch {
       toast.error('فشل رفع الملف');
     }
