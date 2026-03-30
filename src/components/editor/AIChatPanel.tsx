@@ -22,10 +22,16 @@ export const AIChatPanel = () => {
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Check backend connectivity on mount
+  useEffect(() => {
+    fetch(`${getBackendUrl()}/system/check`)
+      .then(res => { if (res.ok) setIsConnected(true); })
+      .catch(() => setIsConnected(false));
+  }, []);
+
   // Subscribe to project status changes
   useEffect(() => {
     if (!projectId) return;
-    setIsConnected(true);
 
     const channel = supabase
       .channel(`project-${projectId}`)
