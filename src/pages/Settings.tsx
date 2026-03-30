@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Upload, TestTube, Key } from 'lucide-react';
 import { toast } from 'sonner';
-import { getBackendUrl } from '@/store/editorStore';
+import { getEdgeFunctionUrl } from '@/store/editorStore';
 
 interface APISettings {
   anthropicKey: string;
