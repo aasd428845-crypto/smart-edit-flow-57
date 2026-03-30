@@ -9,6 +9,7 @@ interface APISettings {
   vimeoToken: string;
   openaiKey: string;
   geminiKey: string;
+  deepseekKey: string;
 }
 
 const assetTypes = [
