@@ -40,18 +40,22 @@ export const TopToolbar = () => {
     addMessage({ type: 'user', text: command });
 
     try {
-      const res = await fetch(`${getBackendUrl()}/process`, {
+      const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          video_source: videoSource,
-          source_type: sourceType,
-          command,
-          current_time: currentTime,
-          project_id: projectId || crypto.randomUUID(),
-          template_id: selectedTemplate?.id || null,
-          content_type: contentType || 'default',
-          cinematic: cinematicMode,
+          message: command,
+          agent: 'gemini',
+          conversation_history: [],
+          project_context: {
+            video_source: videoSource,
+            source_type: sourceType,
+            current_time: currentTime,
+            project_id: projectId || crypto.randomUUID(),
+            template_id: selectedTemplate?.id || null,
+            content_type: contentType || 'default',
+            cinematic: cinematicMode,
+          },
         }),
       });
       if (!res.ok) throw new Error('فشل الاتصال بالخادم');
