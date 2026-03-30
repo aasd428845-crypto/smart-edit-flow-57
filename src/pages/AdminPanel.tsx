@@ -4,7 +4,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Trash2, Download, Bell, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
-import { toast } from 'sonner';
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
   pending: { label: 'في الانتظار', color: '#9e9a8e', bg: '#1e1e2a' },
