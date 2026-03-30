@@ -4,6 +4,13 @@ import { useEditorStore, statusMessages, getBackendUrl } from '@/store/editorSto
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+const aiAgents = [
+  { id: 'claude', label: 'Claude (Anthropic)', icon: '🟣' },
+  { id: 'gpt4', label: 'GPT-4 (OpenAI)', icon: '🟢' },
+  { id: 'gemini', label: 'Gemini (Google)', icon: '🔵' },
+  { id: 'deepseek', label: 'DeepSeek', icon: '🟠' },
+];
+
 const quickSuggestions = [
   { label: 'ما ينقص المنصة؟', message: 'ما ينقص المنصة؟' },
   { label: 'تحليل سينمائي', message: 'قم بتحليل الفيديو الحالي وأخبرني توصياتك للمونتاج السينمائي' },
