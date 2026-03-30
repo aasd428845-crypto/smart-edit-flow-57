@@ -22,10 +22,16 @@ export const AIChatPanel = () => {
   const [isConnected, setIsConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Check backend connectivity on mount
+  useEffect(() => {
+    fetch(`${getBackendUrl()}/system/check`)
+      .then(res => { if (res.ok) setIsConnected(true); })
+      .catch(() => setIsConnected(false));
+  }, []);
+
   // Subscribe to project status changes
   useEffect(() => {
     if (!projectId) return;
-    setIsConnected(true);
 
     const channel = supabase
       .channel(`project-${projectId}`)
@@ -90,15 +96,28 @@ export const AIChatPanel = () => {
           },
         }),
       });
-      if (!res.ok) throw new Error('فشل الاتصال');
       const data = await res.json();
+      if (!res.ok) {
+        // Check for Anthropic credit/billing errors
+        const errMsg = data.detail || data.error || data.message || '';
+        if (typeof errMsg === 'string' && (errMsg.toLowerCase().includes('credit') || errMsg.toLowerCase().includes('billing') || errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('quota'))) {
+          addMessage({ type: 'error', text: `⚠️ رصيد Anthropic غير كافٍ. يرجى شحن حسابك على console.anthropic.com\n\n${errMsg}` });
+        } else {
+          addMessage({ type: 'error', text: `⚠️ خطأ من السيرفر: ${errMsg || res.statusText}` });
+        }
+        return;
+      }
       addMessage({ type: 'ai', text: data.reply || data.message || 'تم' });
 
       if (data.needs_video && !videoSource) {
         toast.warning('⚠️ هذا الأمر يحتاج فيديو. ارفع فيديو أولاً.');
       }
-    } catch {
-      addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+    } catch (err: any) {
+      if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
+        addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+      } else {
+        addMessage({ type: 'error', text: `⚠️ خطأ غير متوقع: ${err?.message || 'غير معروف'}` });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -109,6 +128,14 @@ export const AIChatPanel = () => {
     try {
       const res = await fetch(`${getBackendUrl()}/system/check`);
       const data = await res.json();
+      setIsConnected(true);
+
+      // Check for Anthropic credit issue specifically
+      const anthropicStatus = data.api_keys?.anthropic;
+      const creditWarning = (typeof anthropicStatus === 'string' && (anthropicStatus.toLowerCase().includes('credit') || anthropicStatus.toLowerCase().includes('insufficient')))
+        ? '\n\n⚠️ تنبيه: رصيد Anthropic غير كافٍ. يرجى شحن الحساب.'
+        : '';
+
       const summary = `🖥️ حالة المنصة: ${data.status === 'healthy' ? '✅ سليمة' : '⚠️ تحتاج تعديل'}
 
 📦 المكتبات الناقصة: ${data.missing_libraries?.length || 0}
@@ -118,10 +145,15 @@ ${data.missing_libraries?.map((m: any) => `• ${m.name}: \`${m.install_cmd}\``)
 ${Object.entries(data.assets || {}).map(([k, v]) => `• ${k}: ${v ? '✅' : '❌'}`).join('\n')}
 
 💡 التوصيات:
-${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.action}`).join('\n') || 'لا توصيات'}`;
+${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.action}`).join('\n') || 'لا توصيات'}${creditWarning}`;
       addMessage({ type: 'ai', text: summary });
-    } catch {
-      addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح' });
+    } catch (err: any) {
+      setIsConnected(false);
+      if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
+        addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+      } else {
+        addMessage({ type: 'error', text: `⚠️ خطأ في فحص النظام: ${err?.message || 'غير معروف'}` });
+      }
     }
   };
 
