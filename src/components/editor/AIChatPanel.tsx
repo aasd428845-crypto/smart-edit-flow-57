@@ -32,7 +32,7 @@ export const AIChatPanel = () => {
 
   // Check backend connectivity on mount
   useEffect(() => {
-    fetch(`${getBackendUrl()}/system/check`)
+    fetch(getEdgeFunctionUrl('system-check'))
       .then(res => { if (res.ok) setIsConnected(true); })
       .catch(() => setIsConnected(false));
   }, []);
