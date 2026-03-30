@@ -40,14 +40,18 @@ export const Timeline = () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          video_source: videoSource,
-          source_type: sourceType,
-          command: cinematicMode ? 'مونتاج سينمائي كامل' : 'مونتاج كامل',
-          current_time: currentTime,
-          project_id: projectId || crypto.randomUUID(),
-          template_id: selectedTemplate?.id || null,
-          content_type: contentType || 'default',
-          cinematic: cinematicMode,
+          message: cinematicMode ? 'مونتاج سينمائي كامل' : 'مونتاج كامل',
+          agent: 'gemini',
+          conversation_history: [],
+          project_context: {
+            video_source: videoSource,
+            source_type: sourceType,
+            current_time: currentTime,
+            project_id: projectId || crypto.randomUUID(),
+            template_id: selectedTemplate?.id || null,
+            content_type: contentType || 'default',
+            cinematic: cinematicMode,
+          },
         }),
       });
       if (!res.ok) throw new Error('فشل الاتصال');
