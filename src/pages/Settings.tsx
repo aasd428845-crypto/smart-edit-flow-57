@@ -59,7 +59,7 @@ const Settings = () => {
     form.append('file', file);
     form.append('asset_type', assetType);
     try {
-      const res = await fetch(`${getBackendUrl()}/upload_asset`, { method: 'POST', body: form });
+      const res = await fetch(getEdgeFunctionUrl('system-check'));
       const data = await res.json();
       toast.success(`✅ تم رفع الملف (${data.size_mb || ''} MB)`);
     } catch {
