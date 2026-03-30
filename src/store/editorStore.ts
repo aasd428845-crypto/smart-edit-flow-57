@@ -97,6 +97,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCinematicMode: (c) => set({ cinematicMode: c }),
   setIsProcessing: (p) => set({ isProcessing: p }),
   setIsUploading: (u) => set({ isUploading: u }),
+  setSelectedAgent: (a) => set({ selectedAgent: a }),
   addMessage: (m) =>
     set((state) => ({
       messages: [
