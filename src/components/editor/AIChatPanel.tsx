@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, Activity } from 'lucide-react';
+import { Send, Paperclip, Activity, ChevronDown } from 'lucide-react';
 import { useEditorStore, statusMessages, getBackendUrl } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
