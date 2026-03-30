@@ -1,6 +1,6 @@
 import { useRef, useState, useCallback } from 'react';
 import { Upload, Film, Play, Pause, Volume2, Maximize, FolderOpen, Link } from 'lucide-react';
-import { useEditorStore, getBackendUrl } from '@/store/editorStore';
+import { useEditorStore } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
