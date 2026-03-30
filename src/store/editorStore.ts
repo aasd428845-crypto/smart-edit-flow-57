@@ -72,6 +72,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedTemplate: null,
   contentType: null,
   cinematicMode: false,
+  selectedAgent: 'claude',
   messages: [
     {
       id: 'welcome',
