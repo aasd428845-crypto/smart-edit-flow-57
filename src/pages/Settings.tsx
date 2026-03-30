@@ -9,6 +9,7 @@ interface APISettings {
   vimeoToken: string;
   openaiKey: string;
   geminiKey: string;
+  deepseekKey: string;
 }
 
 const assetTypes = [
@@ -30,6 +31,7 @@ const Settings = () => {
       vimeoToken: localStorage.getItem('vimeo_token') || '',
       openaiKey: localStorage.getItem('openai_key') || '',
       geminiKey: localStorage.getItem('gemini_key') || '',
+      deepseekKey: localStorage.getItem('deepseek_key') || '',
     };
   });
 
@@ -38,6 +40,7 @@ const Settings = () => {
     localStorage.setItem('vimeo_token', settings.vimeoToken);
     localStorage.setItem('openai_key', settings.openaiKey);
     localStorage.setItem('gemini_key', settings.geminiKey);
+    localStorage.setItem('deepseek_key', settings.deepseekKey);
     toast.success('✅ تم حفظ الإعدادات');
   };
 
@@ -86,6 +89,7 @@ const Settings = () => {
     { key: 'vimeoToken', label: 'Vimeo Access Token', hint: 'من vimeo.com/settings' },
     { key: 'openaiKey', label: 'OpenAI API Key', hint: 'من platform.openai.com' },
     { key: 'geminiKey', label: 'Gemini API Key', hint: 'من ai.google.dev' },
+    { key: 'deepseekKey', label: 'DeepSeek API Key', hint: 'من platform.deepseek.com' },
   ];
 
   return (

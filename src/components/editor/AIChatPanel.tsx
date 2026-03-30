@@ -1,8 +1,15 @@
 import { useRef, useState, useEffect } from 'react';
-import { Send, Paperclip, Activity } from 'lucide-react';
+import { Send, Paperclip, Activity, ChevronDown } from 'lucide-react';
 import { useEditorStore, statusMessages, getBackendUrl } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+const aiAgents = [
+  { id: 'claude', label: 'Claude (Anthropic)', icon: '🟣' },
+  { id: 'gpt4', label: 'GPT-4 (OpenAI)', icon: '🟢' },
+  { id: 'gemini', label: 'Gemini (Google)', icon: '🔵' },
+  { id: 'deepseek', label: 'DeepSeek', icon: '🟠' },
+];
 
 const quickSuggestions = [
   { label: 'ما ينقص المنصة؟', message: 'ما ينقص المنصة؟' },
@@ -15,11 +22,12 @@ export const AIChatPanel = () => {
   const {
     messages, addMessage, projectId, videoSource, sourceType,
     currentTime, selectedTemplate, contentType, setProjectStatus,
-    cinematicMode,
+    cinematicMode, selectedAgent, setSelectedAgent,
   } = useEditorStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [showAgentMenu, setShowAgentMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Check backend connectivity on mount
@@ -84,6 +92,7 @@ export const AIChatPanel = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
+          agent: selectedAgent,
           conversation_history: messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.text })),
           project_context: {
             video_source: videoSource,
@@ -174,6 +183,35 @@ ${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.act
             فحص المنصة
           </button>
         </div>
+
+        {/* Agent Selector */}
+        <div className="relative mt-2">
+          <button
+            onClick={() => setShowAgentMenu(!showAgentMenu)}
+            className="flex items-center justify-between w-full px-3 py-1.5 rounded-lg bg-muted border border-border hover:border-gold-dim text-xs text-foreground transition-all"
+          >
+            <span className="flex items-center gap-2">
+              <span>{aiAgents.find(a => a.id === selectedAgent)?.icon}</span>
+              <span>اختر الوكيل: {aiAgents.find(a => a.id === selectedAgent)?.label}</span>
+            </span>
+            <ChevronDown size={14} className={`text-muted-foreground transition-transform ${showAgentMenu ? 'rotate-180' : ''}`} />
+          </button>
+          {showAgentMenu && (
+            <div className="absolute z-20 top-full mt-1 w-full bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+              {aiAgents.map((agent) => (
+                <button
+                  key={agent.id}
+                  onClick={() => { setSelectedAgent(agent.id); setShowAgentMenu(false); }}
+                  className={`flex items-center gap-2 w-full px-3 py-2 text-xs text-right hover:bg-muted transition-colors ${selectedAgent === agent.id ? 'bg-muted text-primary font-bold' : 'text-foreground'}`}
+                >
+                  <span>{agent.icon}</span>
+                  <span>{agent.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="flex items-center gap-4 mt-2 text-xs">
           <span className="flex items-center gap-1">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground'}`} />

@@ -35,6 +35,7 @@ interface EditorState {
   messages: ChatMessage[];
   isProcessing: boolean;
   isUploading: boolean;
+  selectedAgent: string;
 
   setVideoUrl: (url: string | null) => void;
   setVideoFile: (file: File | null) => void;
@@ -49,6 +50,7 @@ interface EditorState {
   setCinematicMode: (c: boolean) => void;
   setIsProcessing: (p: boolean) => void;
   setIsUploading: (u: boolean) => void;
+  setSelectedAgent: (a: string) => void;
   addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   clearMessages: () => void;
 }
@@ -70,6 +72,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   selectedTemplate: null,
   contentType: null,
   cinematicMode: false,
+  selectedAgent: 'claude',
   messages: [
     {
       id: 'welcome',
@@ -94,6 +97,7 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCinematicMode: (c) => set({ cinematicMode: c }),
   setIsProcessing: (p) => set({ isProcessing: p }),
   setIsUploading: (u) => set({ isUploading: u }),
+  setSelectedAgent: (a) => set({ selectedAgent: a }),
   addMessage: (m) =>
     set((state) => ({
       messages: [
