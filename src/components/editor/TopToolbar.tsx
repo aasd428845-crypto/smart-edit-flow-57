@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Scissors, RotateCw, Type, Image, LayoutTemplate, Save, Settings, Shield, Sparkles } from 'lucide-react';
-import { useEditorStore, getBackendUrl, defaultTemplates } from '@/store/editorStore';
+import { useEditorStore, getEdgeFunctionUrl, defaultTemplates } from '@/store/editorStore';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
