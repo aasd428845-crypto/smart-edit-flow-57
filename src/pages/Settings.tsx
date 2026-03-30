@@ -40,6 +40,7 @@ const Settings = () => {
     localStorage.setItem('vimeo_token', settings.vimeoToken);
     localStorage.setItem('openai_key', settings.openaiKey);
     localStorage.setItem('gemini_key', settings.geminiKey);
+    localStorage.setItem('deepseek_key', settings.deepseekKey);
     toast.success('✅ تم حفظ الإعدادات');
   };
 
