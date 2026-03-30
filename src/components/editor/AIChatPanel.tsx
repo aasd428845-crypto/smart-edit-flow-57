@@ -90,15 +90,28 @@ export const AIChatPanel = () => {
           },
         }),
       });
-      if (!res.ok) throw new Error('فشل الاتصال');
       const data = await res.json();
+      if (!res.ok) {
+        // Check for Anthropic credit/billing errors
+        const errMsg = data.detail || data.error || data.message || '';
+        if (typeof errMsg === 'string' && (errMsg.toLowerCase().includes('credit') || errMsg.toLowerCase().includes('billing') || errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('quota'))) {
+          addMessage({ type: 'error', text: `⚠️ رصيد Anthropic غير كافٍ. يرجى شحن حسابك على console.anthropic.com\n\n${errMsg}` });
+        } else {
+          addMessage({ type: 'error', text: `⚠️ خطأ من السيرفر: ${errMsg || res.statusText}` });
+        }
+        return;
+      }
       addMessage({ type: 'ai', text: data.reply || data.message || 'تم' });
 
       if (data.needs_video && !videoSource) {
         toast.warning('⚠️ هذا الأمر يحتاج فيديو. ارفع فيديو أولاً.');
       }
-    } catch {
-      addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+    } catch (err: any) {
+      if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
+        addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+      } else {
+        addMessage({ type: 'error', text: `⚠️ خطأ غير متوقع: ${err?.message || 'غير معروف'}` });
+      }
     } finally {
       setIsLoading(false);
     }
