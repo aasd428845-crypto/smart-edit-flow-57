@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Scissors, RotateCw, Type, Image, LayoutTemplate, Save, Settings, Shield, Sparkles } from 'lucide-react';
-import { useEditorStore, getBackendUrl, defaultTemplates } from '@/store/editorStore';
+import { useEditorStore, getEdgeFunctionUrl, defaultTemplates } from '@/store/editorStore';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -40,27 +40,31 @@ export const TopToolbar = () => {
     addMessage({ type: 'user', text: command });
 
     try {
-      const res = await fetch(`${getBackendUrl()}/process`, {
+      const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          video_source: videoSource,
-          source_type: sourceType,
-          command,
-          current_time: currentTime,
-          project_id: projectId || crypto.randomUUID(),
-          template_id: selectedTemplate?.id || null,
-          content_type: contentType || 'default',
-          cinematic: cinematicMode,
+          message: command,
+          agent: 'gemini',
+          conversation_history: [],
+          project_context: {
+            video_source: videoSource,
+            source_type: sourceType,
+            current_time: currentTime,
+            project_id: projectId || crypto.randomUUID(),
+            template_id: selectedTemplate?.id || null,
+            content_type: contentType || 'default',
+            cinematic: cinematicMode,
+          },
         }),
       });
       if (!res.ok) throw new Error('فشل الاتصال بالخادم');
       const data = await res.json();
-      addMessage({ type: 'ai', text: `✅ ${data.message || 'تم إرسال الأمر'}`, status: 'processing' });
+      addMessage({ type: 'ai', text: `✅ ${data.reply || data.message || 'تم إرسال الأمر'}`, status: 'processing' });
       toast.success('تم إرسال الأمر');
     } catch (err: any) {
-      addMessage({ type: 'error', text: `⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app` });
-      toast.error('فشل الاتصال بالسيرفر المحلي');
+      addMessage({ type: 'error', text: `⚠️ فشل الاتصال بالخادم` });
+      toast.error('فشل الاتصال بالخادم');
     } finally {
       setIsProcessing(false);
     }
@@ -94,7 +98,7 @@ export const TopToolbar = () => {
     form.append('file', file);
     form.append('asset_type', 'logo');
     try {
-      await fetch(`${getBackendUrl()}/upload_asset`, { method: 'POST', body: form });
+      await fetch(getEdgeFunctionUrl('chat'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: `رفع شعار جديد`, agent: 'gemini', conversation_history: [], project_context: {} }) });
       toast.success('✅ تم رفع الشعار');
     } catch {
       toast.error('فشل رفع الشعار');

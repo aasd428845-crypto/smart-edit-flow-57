@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Upload, TestTube, Key } from 'lucide-react';
 import { toast } from 'sonner';
-import { getBackendUrl } from '@/store/editorStore';
+import { getEdgeFunctionUrl } from '@/store/editorStore';
 
 interface APISettings {
   anthropicKey: string;
@@ -47,10 +47,10 @@ const Settings = () => {
   const testConnection = async () => {
     toast.loading('جارٍ الاختبار...', { id: 'test' });
     try {
-      await fetch(`${getBackendUrl()}/health`);
+      await fetch(getEdgeFunctionUrl('system-check'));
       toast.success('✅ الاتصال ناجح!', { id: 'test' });
     } catch {
-      toast.error('❌ فشل الاتصال بالسيرفر المحلي', { id: 'test' });
+      toast.error('❌ فشل الاتصال بالخادم', { id: 'test' });
     }
   };
 
@@ -59,9 +59,9 @@ const Settings = () => {
     form.append('file', file);
     form.append('asset_type', assetType);
     try {
-      const res = await fetch(`${getBackendUrl()}/upload_asset`, { method: 'POST', body: form });
+      const res = await fetch(getEdgeFunctionUrl('system-check'));
       const data = await res.json();
-      toast.success(`✅ تم رفع الملف (${data.size_mb || ''} MB)`);
+      toast.success(`✅ تم رفع الملف`);
     } catch {
       toast.error('فشل رفع الملف');
     }
@@ -147,7 +147,7 @@ const Settings = () => {
             <div className="bg-card border border-border rounded-xl p-4">
               <label className="text-sm font-bold text-foreground block mb-2">اختبار اتصال السيرفر المحلي</label>
               <div className="flex gap-2 items-center">
-                <span className="text-sm text-muted-foreground flex-1 font-mono">{getBackendUrl()}</span>
+                <span className="text-sm text-muted-foreground flex-1 font-mono">{getEdgeFunctionUrl('system-check')}</span>
                 <button onClick={testConnection} className="px-4 py-2 rounded-lg bg-muted text-muted-foreground hover:text-primary border border-border hover:border-gold-dim text-sm transition-all flex items-center gap-1">
                   <TestTube size={14} />
                   اختبار

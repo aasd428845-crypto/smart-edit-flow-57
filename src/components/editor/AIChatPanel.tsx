@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { Send, Paperclip, Activity, ChevronDown } from 'lucide-react';
-import { useEditorStore, statusMessages, getBackendUrl } from '@/store/editorStore';
+import { useEditorStore, statusMessages, getEdgeFunctionUrl } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -32,7 +32,7 @@ export const AIChatPanel = () => {
 
   // Check backend connectivity on mount
   useEffect(() => {
-    fetch(`${getBackendUrl()}/system/check`)
+    fetch(getEdgeFunctionUrl('system-check'))
       .then(res => { if (res.ok) setIsConnected(true); })
       .catch(() => setIsConnected(false));
   }, []);
@@ -87,7 +87,7 @@ export const AIChatPanel = () => {
     setIsLoading(true);
 
     try {
-      const res = await fetch(`${getBackendUrl()}/chat`, {
+      const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -123,7 +123,7 @@ export const AIChatPanel = () => {
       }
     } catch (err: any) {
       if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+        addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم. تحقق من اتصالك بالإنترنت.' });
       } else {
         addMessage({ type: 'error', text: `⚠️ خطأ غير متوقع: ${err?.message || 'غير معروف'}` });
       }
@@ -135,7 +135,7 @@ export const AIChatPanel = () => {
   const checkSystem = async () => {
     addMessage({ type: 'user', text: '🔍 فحص المنصة...' });
     try {
-      const res = await fetch(`${getBackendUrl()}/system/check`);
+      const res = await fetch(getEdgeFunctionUrl('system-check'));
       const data = await res.json();
       setIsConnected(true);
 
@@ -159,7 +159,7 @@ ${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.act
     } catch (err: any) {
       setIsConnected(false);
       if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
+        addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم. تحقق من اتصالك بالإنترنت.' });
       } else {
         addMessage({ type: 'error', text: `⚠️ خطأ في فحص النظام: ${err?.message || 'غير معروف'}` });
       }

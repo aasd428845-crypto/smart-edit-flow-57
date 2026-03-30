@@ -55,9 +55,9 @@ interface EditorState {
   clearMessages: () => void;
 }
 
-const BACKEND_URL = 'http://localhost:8000';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
-export const getBackendUrl = () => BACKEND_URL;
+export const getEdgeFunctionUrl = (fn: string) => `${SUPABASE_URL}/functions/v1/${fn}`;
 
 export const useEditorStore = create<EditorState>((set) => ({
   videoUrl: null,

@@ -1,4 +1,4 @@
-import { useEditorStore, getBackendUrl } from '@/store/editorStore';
+import { useEditorStore, getEdgeFunctionUrl } from '@/store/editorStore';
 import { toast } from 'sonner';
 import { Music, Film, FileText, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useRef } from 'react';
@@ -36,27 +36,31 @@ export const Timeline = () => {
     addMessage({ type: 'user', text: cinematicMode ? '🎥 مونتاج سينمائي' : '🎬 مونتاج كامل' });
 
     try {
-      const res = await fetch(`${getBackendUrl()}/process`, {
+      const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          video_source: videoSource,
-          source_type: sourceType,
-          command: cinematicMode ? 'مونتاج سينمائي كامل' : 'مونتاج كامل',
-          current_time: currentTime,
-          project_id: projectId || crypto.randomUUID(),
-          template_id: selectedTemplate?.id || null,
-          content_type: contentType || 'default',
-          cinematic: cinematicMode,
+          message: cinematicMode ? 'مونتاج سينمائي كامل' : 'مونتاج كامل',
+          agent: 'gemini',
+          conversation_history: [],
+          project_context: {
+            video_source: videoSource,
+            source_type: sourceType,
+            current_time: currentTime,
+            project_id: projectId || crypto.randomUUID(),
+            template_id: selectedTemplate?.id || null,
+            content_type: contentType || 'default',
+            cinematic: cinematicMode,
+          },
         }),
       });
       if (!res.ok) throw new Error('فشل الاتصال');
       const data = await res.json();
-      addMessage({ type: 'ai', text: `✅ ${data.message || 'تم إرسال طلب المعالجة'}`, status: 'processing' });
+      addMessage({ type: 'ai', text: `✅ ${data.reply || data.message || 'تم إرسال طلب المعالجة'}`, status: 'processing' });
       toast.success('تم إرسال طلب المعالجة');
     } catch {
-      addMessage({ type: 'error', text: '⚠️ السيرفر المحلي غير متاح. تأكد من تشغيل: uvicorn main:app' });
-      toast.error('فشل الاتصال بالسيرفر المحلي');
+      addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم' });
+      toast.error('فشل الاتصال بالخادم');
     } finally {
       setIsProcessing(false);
     }

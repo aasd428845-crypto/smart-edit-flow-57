@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowRight, Trash2, Download, Bell, RefreshCw } from 'lucide-react';
-import { getBackendUrl } from '@/store/editorStore';
 import { toast } from 'sonner';
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -28,14 +27,8 @@ const AdminPanel = () => {
   const { data: projects, refetch, isLoading } = useQuery({
     queryKey: ['admin-projects'],
     queryFn: async () => {
-      try {
-        const res = await fetch(`${getBackendUrl()}/admin/projects`);
-        const data = await res.json();
-        return data.projects || [];
-      } catch {
-        const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
-        return data || [];
-      }
+      const { data } = await supabase.from('projects').select('*').order('created_at', { ascending: false });
+      return data || [];
     },
   });
 
