@@ -35,6 +35,7 @@ interface EditorState {
   messages: ChatMessage[];
   isProcessing: boolean;
   isUploading: boolean;
+  selectedAgent: string;
 
   setVideoUrl: (url: string | null) => void;
   setVideoFile: (file: File | null) => void;
@@ -49,6 +50,7 @@ interface EditorState {
   setCinematicMode: (c: boolean) => void;
   setIsProcessing: (p: boolean) => void;
   setIsUploading: (u: boolean) => void;
+  setSelectedAgent: (a: string) => void;
   addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   clearMessages: () => void;
 }
