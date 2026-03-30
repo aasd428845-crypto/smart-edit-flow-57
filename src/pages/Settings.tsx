@@ -50,7 +50,7 @@ const Settings = () => {
       await fetch(getEdgeFunctionUrl('system-check'));
       toast.success('✅ الاتصال ناجح!', { id: 'test' });
     } catch {
-      toast.error('❌ فشل الاتصال بالسيرفر المحلي', { id: 'test' });
+      toast.error('❌ فشل الاتصال بالخادم', { id: 'test' });
     }
   };
 
