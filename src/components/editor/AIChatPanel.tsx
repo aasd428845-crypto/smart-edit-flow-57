@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect } from 'react';
 import { Send, Paperclip, Activity, ChevronDown } from 'lucide-react';
-import { useEditorStore, statusMessages, getEdgeFunctionUrl } from '@/store/editorStore';
+import { useEditorStore, statusMessages, getEdgeFunctionUrl, getLocalBackendUrl } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { MessageBubble } from './MessageBubble';
 
 const aiAgents = [
   { id: 'claude', label: 'Claude (Anthropic)', icon: '🟣' },
@@ -12,73 +13,79 @@ const aiAgents = [
 ];
 
 const quickSuggestions = [
-  { label: 'ما ينقص المنصة؟', message: 'ما ينقص المنصة؟' },
-  { label: 'تحليل سينمائي', message: 'قم بتحليل الفيديو الحالي وأخبرني توصياتك للمونتاج السينمائي' },
-  { label: 'مكتبات مفقودة؟', message: 'ما المكتبات الناقصة التي تمنعك من تنفيذ أوامري؟' },
-  { label: 'نظّف الصوت', message: 'نظّف الصوت' },
+  { label: '✂️ قص من 0 إلى 30', message: 'قص من الثانية 0 إلى 30' },
+  { label: '🔊 نقّي الصوت', message: 'نقّي الصوت' },
+  { label: '🎞️ شرائط سينمائية', message: 'أضف شرائط سينمائية' },
+  { label: '🎨 ألوان ذهبية', message: 'صحح الألوان بأسلوب ذهبي للأعراس' },
+  { label: '🚀 سرّع مرتين', message: 'سرّع الفيديو مرتين' },
+  { label: '📝 فرّغ الكلام', message: 'فرّغ الكلام لنص عربي' },
+  { label: '💾 صدّر 1080p', message: 'صدّر بجودة 1080p' },
+  { label: '📊 معلومات الفيديو', message: 'معلومات عن الفيديو' },
+  { label: '🎵 موسيقى خلفية', message: 'أضف موسيقى خلفية' },
+  { label: '🔄 اعكس الفيديو', message: 'اعكس الفيديو' },
 ];
 
 export const AIChatPanel = () => {
   const {
     messages, addMessage, projectId, videoSource, sourceType,
     currentTime, selectedTemplate, contentType, setProjectStatus,
-    cinematicMode, selectedAgent, setSelectedAgent,
+    cinematicMode, selectedAgent, setSelectedAgent, setVideoSource,
   } = useEditorStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [localConnected, setLocalConnected] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Check backend connectivity on mount
   useEffect(() => {
+    // Check edge function
     fetch(getEdgeFunctionUrl('system-check'))
       .then(res => { if (res.ok) setIsConnected(true); })
       .catch(() => setIsConnected(false));
+
+    // Check local backend
+    fetch(`${getLocalBackendUrl()}/system/check`)
+      .then(res => { if (res.ok) setLocalConnected(true); })
+      .catch(() => setLocalConnected(false));
   }, []);
 
   // Subscribe to project status changes
   useEffect(() => {
     if (!projectId) return;
-
     const channel = supabase
       .channel(`project-${projectId}`)
       .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'projects',
+        event: 'UPDATE', schema: 'public', table: 'projects',
         filter: `id=eq.${projectId}`,
       }, (payload: any) => {
         const newStatus = payload.new.status;
         setProjectStatus(newStatus);
         const msg = statusMessages[newStatus];
         if (msg) addMessage({ type: 'status', text: msg });
-
         if (newStatus === 'completed' && payload.new.output_url) {
           addMessage({
-            type: 'ai',
-            text: `✅ اكتمل المونتاج!\n📥 [تحميل الفيديو](${payload.new.output_url})`,
-            status: 'completed',
+            type: 'execution_result', text: '✅ اكتمل المونتاج!',
+            outputUrl: payload.new.output_url, status: 'completed',
           });
         }
         if (newStatus === 'failed') {
-          addMessage({
-            type: 'error',
-            text: `❌ فشلت المعالجة: ${payload.new.error || 'خطأ غير معروف'}`,
-          });
+          addMessage({ type: 'error', text: `❌ فشلت المعالجة: ${payload.new.error || 'خطأ غير معروف'}` });
         }
       })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-      setIsConnected(false);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [projectId]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
+
+  const handlePreviewVideo = (url: string) => {
+    setVideoSource(url, 'remote');
+    toast.success('▶️ تم تحميل الفيديو في المشغل');
+  };
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -87,13 +94,76 @@ export const AIChatPanel = () => {
     setIsLoading(true);
 
     try {
+      // Path 1: If video exists AND local backend is available → try /command first
+      if (videoSource && localConnected) {
+        try {
+          const cmdRes = await fetch(`${getLocalBackendUrl()}/command`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              command: text,
+              video_source: videoSource,
+              project_id: projectId || 'default',
+              current_time: currentTime,
+              content_type: contentType || 'default',
+            }),
+          });
+          const cmdData = await cmdRes.json();
+
+          if (cmdData.status === 'success') {
+            addMessage({
+              type: 'execution_result',
+              text: cmdData.message,
+              action: cmdData.action,
+              outputUrl: cmdData.output_url,
+              diffLog: cmdData.diff_log,
+              nextSteps: cmdData.next_steps,
+              missingAssets: cmdData.missing_assets,
+            });
+            if (cmdData.output_url) {
+              setVideoSource(cmdData.output_url, 'remote');
+              toast.success(`✅ ${cmdData.action} - تم!`);
+            }
+            return;
+          }
+
+          if (cmdData.status === 'clarification_needed') {
+            addMessage({ type: 'clarification', text: cmdData.question });
+            return;
+          }
+
+          if (cmdData.status === 'needs_video') {
+            addMessage({ type: 'ai', text: cmdData.message });
+            toast.warning('⚠️ هذا الأمر يحتاج فيديو.');
+            return;
+          }
+
+          if (cmdData.status === 'error') {
+            addMessage({
+              type: 'error',
+              text: cmdData.message || 'فشل تنفيذ الأمر',
+              missingAssets: cmdData.missing_assets,
+              nextSteps: cmdData.next_steps,
+            });
+            return;
+          }
+        } catch {
+          // Local backend not available, fall through to cloud chat
+          setLocalConnected(false);
+        }
+      }
+
+      // Path 2: Cloud AI chat (edge function)
       const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
           agent: selectedAgent,
-          conversation_history: messages.map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.text })),
+          conversation_history: messages.slice(-10).map(m => ({
+            role: m.type === 'user' ? 'user' : 'assistant',
+            content: m.text,
+          })),
           project_context: {
             video_source: videoSource,
             source_type: sourceType,
@@ -106,26 +176,26 @@ export const AIChatPanel = () => {
         }),
       });
       const data = await res.json();
+
       if (!res.ok) {
-        // Check for Anthropic credit/billing errors
         const errMsg = data.detail || data.error || data.message || '';
-        if (typeof errMsg === 'string' && (errMsg.toLowerCase().includes('credit') || errMsg.toLowerCase().includes('billing') || errMsg.toLowerCase().includes('insufficient') || errMsg.toLowerCase().includes('quota'))) {
-          addMessage({ type: 'error', text: `⚠️ رصيد Anthropic غير كافٍ. يرجى شحن حسابك على console.anthropic.com\n\n${errMsg}` });
+        if (typeof errMsg === 'string' && (errMsg.includes('credit') || errMsg.includes('billing') || errMsg.includes('insufficient'))) {
+          addMessage({ type: 'error', text: `⚠️ رصيد غير كافٍ. يرجى شحن حسابك.\n\n${errMsg}` });
         } else {
-          addMessage({ type: 'error', text: `⚠️ خطأ من السيرفر: ${errMsg || res.statusText}` });
+          addMessage({ type: 'error', text: `⚠️ خطأ: ${errMsg || res.statusText}` });
         }
         return;
       }
-      addMessage({ type: 'ai', text: data.reply || data.message || 'تم' });
 
+      addMessage({ type: 'ai', text: data.reply || 'تم' });
       if (data.needs_video && !videoSource) {
         toast.warning('⚠️ هذا الأمر يحتاج فيديو. ارفع فيديو أولاً.');
       }
     } catch (err: any) {
       if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم. تحقق من اتصالك بالإنترنت.' });
+        addMessage({ type: 'error', text: '⚠️ فشل الاتصال. تحقق من اتصالك بالإنترنت.' });
       } else {
-        addMessage({ type: 'error', text: `⚠️ خطأ غير متوقع: ${err?.message || 'غير معروف'}` });
+        addMessage({ type: 'error', text: `⚠️ خطأ: ${err?.message || 'غير معروف'}` });
       }
     } finally {
       setIsLoading(false);
@@ -135,34 +205,40 @@ export const AIChatPanel = () => {
   const checkSystem = async () => {
     addMessage({ type: 'user', text: '🔍 فحص المنصة...' });
     try {
-      const res = await fetch(getEdgeFunctionUrl('system-check'));
-      const data = await res.json();
-      setIsConnected(true);
+      // Check cloud
+      const cloudRes = await fetch(getEdgeFunctionUrl('system-check'));
+      const cloudOk = cloudRes.ok;
+      setIsConnected(cloudOk);
 
-      // Check for Anthropic credit issue specifically
-      const anthropicStatus = data.api_keys?.anthropic;
-      const creditWarning = (typeof anthropicStatus === 'string' && (anthropicStatus.toLowerCase().includes('credit') || anthropicStatus.toLowerCase().includes('insufficient')))
-        ? '\n\n⚠️ تنبيه: رصيد Anthropic غير كافٍ. يرجى شحن الحساب.'
-        : '';
+      // Check local
+      let localOk = false;
+      let localData: any = null;
+      try {
+        const localRes = await fetch(`${getLocalBackendUrl()}/system/check`);
+        localOk = localRes.ok;
+        if (localOk) localData = await localRes.json();
+        setLocalConnected(localOk);
+      } catch { setLocalConnected(false); }
 
-      const summary = `🖥️ حالة المنصة: ${data.status === 'healthy' ? '✅ سليمة' : '⚠️ تحتاج تعديل'}
+      let summary = `🖥️ حالة المنصة:
+☁️ Cloud AI: ${cloudOk ? '✅ متصل' : '❌ غير متصل'}
+🏠 سيرفر محلي: ${localOk ? '✅ متصل' : '❌ غير متصل'}`;
 
-📦 المكتبات الناقصة: ${data.missing_libraries?.length || 0}
-${data.missing_libraries?.map((m: any) => `• ${m.name}: \`${m.install_cmd}\``).join('\n') || 'لا شيء ناقص'}
+      if (localData) {
+        if (localData.missing_libraries?.length) {
+          summary += `\n\n📦 مكتبات ناقصة:\n${localData.missing_libraries.map((m: any) => `• ${m.name}: \`${m.install_cmd}\``).join('\n')}`;
+        }
+        if (localData.assets) {
+          summary += `\n\n📁 الأصول:\n${Object.entries(localData.assets).map(([k, v]) => `• ${k}: ${v ? '✅' : '❌'}`).join('\n')}`;
+        }
+        if (localData.recommendations?.length) {
+          summary += `\n\n💡 التوصيات:\n${localData.recommendations.map((r: any) => `• [${r.priority}] ${r.title}: ${r.action}`).join('\n')}`;
+        }
+      }
 
-📁 الأصول:
-${Object.entries(data.assets || {}).map(([k, v]) => `• ${k}: ${v ? '✅' : '❌'}`).join('\n')}
-
-💡 التوصيات:
-${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.action}`).join('\n') || 'لا توصيات'}${creditWarning}`;
       addMessage({ type: 'ai', text: summary });
     } catch (err: any) {
-      setIsConnected(false);
-      if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم. تحقق من اتصالك بالإنترنت.' });
-      } else {
-        addMessage({ type: 'error', text: `⚠️ خطأ في فحص النظام: ${err?.message || 'غير معروف'}` });
-      }
+      addMessage({ type: 'error', text: `⚠️ خطأ في الفحص: ${err?.message || 'غير معروف'}` });
     }
   };
 
@@ -215,7 +291,11 @@ ${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.act
         <div className="flex items-center gap-4 mt-2 text-xs">
           <span className="flex items-center gap-1">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground'}`} />
-            {isConnected ? 'متصل' : 'غير متصل'}
+            ☁️ {isConnected ? 'متصل' : 'غير متصل'}
+          </span>
+          <span className="flex items-center gap-1">
+            <span className={`w-2 h-2 rounded-full ${localConnected ? 'bg-success' : 'bg-muted-foreground'}`} />
+            🏠 {localConnected ? 'محلي' : 'لا سيرفر'}
           </span>
           <span className="text-muted-foreground">
             {projectId ? 'مشروع نشط' : 'لا يوجد مشروع'}
@@ -226,42 +306,12 @@ ${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.act
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3">
         {messages.map((msg) => (
-          <div
+          <MessageBubble
             key={msg.id}
-            className={`animate-fade-in-up ${
-              msg.type === 'user'
-                ? 'mr-0 ml-auto max-w-[85%]'
-                : msg.type === 'status'
-                ? 'mx-auto text-center'
-                : 'ml-0 mr-auto max-w-[85%]'
-            }`}
-          >
-            {msg.type === 'status' ? (
-              <span className="text-muted-foreground text-xs">{msg.text}</span>
-            ) : (
-              <div
-                className={`p-3 rounded-lg text-sm ${
-                  msg.type === 'user'
-                    ? 'bg-muted border border-gold-dim/30 text-foreground'
-                    : msg.type === 'error'
-                    ? 'bg-destructive/20 border border-destructive/30 text-destructive'
-                    : 'bg-secondary text-foreground'
-                }`}
-              >
-                <span className="text-xs opacity-50 mb-1 block">
-                  {msg.type === 'user' ? '👤' : msg.type === 'error' ? '⚠️' : '🤖'}
-                </span>
-                <p className="whitespace-pre-wrap">{msg.text}</p>
-                {msg.status === 'processing' && (
-                  <div className="flex gap-1 mt-2">
-                    <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" />
-                    <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.15s]" />
-                    <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:0.3s]" />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+            msg={msg}
+            onSendMessage={sendMessage}
+            onPreviewVideo={handlePreviewVideo}
+          />
         ))}
         {isLoading && (
           <div className="ml-0 mr-auto max-w-[85%] animate-fade-in-up">
@@ -300,7 +350,7 @@ ${data.recommendations?.map((r: any) => `• [${r.priority}] ${r.title}: ${r.act
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendMessage(input)}
-          placeholder="اكتب أمراً أو اسأل سؤالاً..."
+          placeholder="اكتب أمراً مثل: قص من 10 إلى 30..."
           className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <button
