@@ -2,10 +2,15 @@ import { create } from 'zustand';
 
 export interface ChatMessage {
   id: string;
-  type: 'user' | 'ai' | 'status' | 'error';
+  type: 'user' | 'ai' | 'status' | 'error' | 'execution_result' | 'clarification';
   text: string;
   timestamp: Date;
   status?: 'processing' | 'completed' | 'failed';
+  outputUrl?: string;
+  diffLog?: string[];
+  nextSteps?: string[];
+  missingAssets?: string[];
+  action?: string;
 }
 
 export interface TemplateCard {
