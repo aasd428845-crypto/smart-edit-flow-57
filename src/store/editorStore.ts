@@ -67,7 +67,7 @@ export const getEdgeFunctionUrl = (fn: string) => `${SUPABASE_URL}/functions/v1/
 // Local backend URL for FFmpeg command execution
 export const getLocalBackendUrl = () => {
   const saved = localStorage.getItem('local_backend_url');
-  return saved || 'http://localhost:8000';
+  return saved || 'http://127.0.0.1:8000';
 };
 
 export const useEditorStore = create<EditorState>((set) => ({
