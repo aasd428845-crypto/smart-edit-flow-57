@@ -64,6 +64,12 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 export const getEdgeFunctionUrl = (fn: string) => `${SUPABASE_URL}/functions/v1/${fn}`;
 
+// Local backend URL for FFmpeg command execution
+export const getLocalBackendUrl = () => {
+  const saved = localStorage.getItem('local_backend_url');
+  return saved || 'http://localhost:8000';
+};
+
 export const useEditorStore = create<EditorState>((set) => ({
   videoUrl: null,
   videoFile: null,
