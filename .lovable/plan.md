@@ -1,36 +1,52 @@
 
 
-# خطة: تحديث رابط السيرفر + إصلاح خطأ Runtime
+# خطة: تحويل الشات لمحرك تنفيذ تلقائي مع Tool Calling
 
-## المشكلة الحالية
-1. **خطأ Runtime**: `Cannot read properties of null (reading 'useState')` — ناتج عن مشكلة في React hooks (ربما تعارض إصدارات أو import خاطئ)
-2. **رابط السيرفر**: يحتاج تحديث العنوان الافتراضي إلى `https://laughing-umbrella-5g7x6699g5xjhpg49-8000.app.github.dev`
-3. **التنفيذ التلقائي**: عند طلب مونتاج، يجب إرسال الأمر مباشرة إلى `/command` وعرض النتيجة فوراً
+## الفكرة
+عندما يطلب المستخدم عملية مونتاج عبر Cloud AI (Path 3)، سيقوم الذكاء الاصطناعي باستدعاء أداة `executeVideoCommand` تلقائياً بدلاً من الرد بنص فقط. الواجهة تنفذ الأمر على السيرفر وتعرض الفيديو الناتج مباشرة.
 
-## التغييرات المطلوبة
+## التغييرات
 
-### 1. إصلاح خطأ useState (الأولوية القصوى)
-**الملف**: `src/hooks/use-mobile.tsx`
-- تغيير `import * as React from "react"` إلى `import { useState, useEffect } from "react"` لتجنب تعارض React namespace
+### 1. تحديث Edge Function (`supabase/functions/chat/index.ts`)
 
-### 2. تحديث رابط السيرفر
-**الملف**: `src/store/editorStore.ts`
-- تغيير القيمة الافتراضية في `getLocalBackendUrl` من `http://127.0.0.1:8000` إلى `https://laughing-umbrella-5g7x6699g5xjhpg49-8000.app.github.dev`
+- إضافة `tools` definition لأداة `executeVideoCommand` تقبل: `action`, `video_source`, `params`
+- تحديث System Prompt ليوجه الـ AI لاستخدام الأداة عند طلب مونتاج بدلاً من الشرح النصي
+- عند رد الـ AI بـ `tool_calls`، إرجاعها للواجهة مع الـ `arguments` بدون تنفيذها (لأن Edge Function لا تصل لسيرفرك)
+- عند رد عادي (بدون tool_calls)، إرجاع `reply` كالمعتاد
 
-### 3. تحديث فحص الاتصال
-**الملف**: `src/components/editor/AIChatPanel.tsx`
-- تحديث مسار فحص السيرفر من `/system/check` إلى `/system/check` (أو المسار الصحيح حسب السيرفر)
-- التأكد من أن الطلبات تتعامل مع CORS بشكل صحيح (السيرفر الآن على domain مختلف)
+```text
+مسار التنفيذ:
+User → Edge Function → AI (مع tools) → tool_call → يُعاد للواجهة
+→ الواجهة تُرسل POST إلى السيرفر /command → تعرض النتيجة
+```
 
-### 4. عرض نتيجة الفيديو فوراً
-**الملف**: `src/components/editor/AIChatPanel.tsx`
-- المنطق الحالي في Path 1 يقوم بالفعل بإرسال الأمر إلى `/command` وعرض النتيجة — فقط يحتاج تفعيله مع الرابط الجديد
-- عند استلام `output_url` من السيرفر، يتم تحميل الفيديو تلقائياً في المشغل وعرض رسالة نجاح
+الـ actions المدعومة: `trim`, `denoise`, `speed`, `reverse`, `color_grade`, `add_subtitles`, `montage`, `info`, `transcribe`
+
+### 2. تحديث الواجهة (`src/components/editor/AIChatPanel.tsx`)
+
+- إضافة دالة `executeVideoCommand(action, videoSource, params)` ترسل POST إلى `${getLocalBackendUrl()}/command`
+- تعديل Path 3 (Cloud AI): عند استلام `tool_calls` في الرد، تنفيذ الأداة تلقائياً على السيرفر
+- عرض النتيجة كـ `execution_result` مع `outputUrl` و`diffLog`
+- تحميل الفيديو الناتج في المشغل تلقائياً
+- إذا لم يوجد فيديو نشط والـ AI طلب أداة تحتاج فيديو، إظهار تنبيه
+
+**ملاحظة**: Path 1 (إرسال مباشر للسيرفر عند وجود فيديو) يبقى كما هو كمسار سريع. المسار الجديد يُفعّل فقط عندما يمر الطلب عبر Cloud AI.
+
+### تنسيق JSON المُرسل للسيرفر
+
+```json
+{
+  "action": "trim",
+  "video_source": "https://...",
+  "params": { "start": 0, "end": 30 },
+  "project_id": "default",
+  "content_type": "wedding"
+}
+```
 
 ## الملفات المتأثرة
 | الملف | التعديل |
 |---|---|
-| `src/hooks/use-mobile.tsx` | إصلاح import React |
-| `src/store/editorStore.ts` | تحديث رابط السيرفر الافتراضي |
-| `src/components/editor/AIChatPanel.tsx` | ضمان توافق CORS مع الرابط السحابي |
+| `supabase/functions/chat/index.ts` | إضافة tools + معالجة tool_calls |
+| `src/components/editor/AIChatPanel.tsx` | إضافة `executeVideoCommand` + معالجة tool_calls من Cloud AI |
 
