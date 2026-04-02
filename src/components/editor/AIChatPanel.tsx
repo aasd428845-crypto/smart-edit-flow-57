@@ -23,6 +23,28 @@ const quickSuggestions = [
   { label: '🔄 اعكس', message: 'اعكس الفيديو' },
 ];
 
+// Execute a video command on the backend server
+const executeVideoCommand = async (
+  action: string,
+  videoSource: string,
+  params: Record<string, any> = {},
+  projectId: string = 'default',
+  contentType: string = 'default',
+): Promise<any> => {
+  const res = await fetch(`${getLocalBackendUrl()}/command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action,
+      video_source: videoSource,
+      params,
+      project_id: projectId,
+      content_type: contentType,
+    }),
+  });
+  return res.json();
+};
+
 export const AIChatPanel = () => {
   const {
     messages, addMessage, projectId, videoSource, sourceType,
@@ -78,6 +100,52 @@ export const AIChatPanel = () => {
     toast.success('▶️ تم تحميل الفيديو في المشغل');
   };
 
+  // Handle tool calls from Cloud AI
+  const handleToolCalls = async (toolCalls: Array<{ name: string; arguments: any }>) => {
+    for (const tc of toolCalls) {
+      if (tc.name === 'executeVideoCommand') {
+        const { action, params = {} } = tc.arguments;
+
+        if (!videoSource) {
+          addMessage({ type: 'error', text: '⚠️ لا يوجد فيديو نشط. يرجى رفع فيديو أولاً.' });
+          toast.warning('⚠️ هذا الأمر يحتاج فيديو.');
+          return;
+        }
+
+        addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ: ${action}...` });
+
+        try {
+          const result = await executeVideoCommand(
+            action, videoSource, params,
+            projectId || 'default', contentType || 'default'
+          );
+
+          if (result.status === 'success') {
+            addMessage({
+              type: 'execution_result',
+              text: result.message || `✅ تم تنفيذ ${action}`,
+              action: result.action,
+              outputUrl: result.output_url,
+              diffLog: result.diff_log,
+              nextSteps: result.next_steps,
+              missingAssets: result.missing_assets,
+            });
+            if (result.output_url) {
+              setVideoSource(result.output_url, 'remote');
+              toast.success(`✅ ${action} - تم!`);
+            }
+          } else if (result.status === 'error') {
+            addMessage({ type: 'error', text: result.message || `❌ فشل ${action}` });
+          } else {
+            addMessage({ type: 'ai', text: result.message || result.reply || 'تم' });
+          }
+        } catch (err: any) {
+          addMessage({ type: 'error', text: `⚠️ فشل الاتصال بالسيرفر: ${err?.message || 'غير معروف'}` });
+        }
+      }
+    }
+  };
+
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
     addMessage({ type: 'user', text });
@@ -85,7 +153,7 @@ export const AIChatPanel = () => {
     setIsLoading(true);
 
     try {
-      // Path 1: Local backend /command (when video exists)
+      // Path 1: Local backend /command (when video exists and local server connected)
       if (videoSource && localConnected) {
         try {
           const cmdRes = await fetch(`${getLocalBackendUrl()}/command`, {
@@ -126,7 +194,6 @@ export const AIChatPanel = () => {
             addMessage({ type: 'error', text: cmdData.message || 'فشل تنفيذ الأمر', missingAssets: cmdData.missing_assets, nextSteps: cmdData.next_steps });
             return;
           }
-          // If status is chat_response or unknown, fall through to cloud
           if (cmdData.status === 'chat_response') {
             addMessage({ type: 'ai', text: cmdData.reply || cmdData.message });
             return;
@@ -164,7 +231,7 @@ export const AIChatPanel = () => {
         }
       }
 
-      // Path 3: Cloud AI (edge function fallback)
+      // Path 3: Cloud AI with Tool Calling
       const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -186,6 +253,13 @@ export const AIChatPanel = () => {
         }
         return;
       }
+
+      // Handle tool_calls from AI
+      if (data.tool_calls?.length) {
+        await handleToolCalls(data.tool_calls);
+        return;
+      }
+
       addMessage({ type: 'ai', text: data.reply || 'تم' });
     } catch (err: any) {
       if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
