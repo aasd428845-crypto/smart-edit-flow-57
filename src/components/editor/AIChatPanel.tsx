@@ -33,6 +33,7 @@ const executeVideoCommand = async (
 ): Promise<any> => {
   const res = await fetch(`${getLocalBackendUrl()}/command`, {
     method: 'POST',
+    mode: 'cors',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action,
