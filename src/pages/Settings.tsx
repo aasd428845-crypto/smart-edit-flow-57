@@ -167,12 +167,40 @@ const Settings = () => {
               </div>
             ))}
 
-            {/* Test connection */}
+            {/* Server URL */}
             <div className="bg-card border border-border rounded-xl p-4">
-              <label className="text-sm font-bold text-foreground block mb-2">اختبار اتصال السيرفر المحلي</label>
+              <label className="text-sm font-bold text-foreground block mb-2">🖥️ رابط السيرفر (FastAPI Backend)</label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  dir="ltr"
+                  value={serverUrl}
+                  onChange={(e) => setServerUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <button
+                  onClick={testServerConnection}
+                  disabled={serverStatus === 'testing'}
+                  className={`px-4 py-2 rounded-lg text-sm font-bold transition-all flex items-center gap-1 border ${
+                    serverStatus === 'ok' ? 'border-green-500 text-green-400 bg-green-500/10' :
+                    serverStatus === 'fail' ? 'border-red-500 text-red-400 bg-red-500/10' :
+                    'border-border bg-muted text-muted-foreground hover:text-foreground hover:border-ring'
+                  }`}
+                >
+                  <TestTube size={14} />
+                  {serverStatus === 'testing' ? '...' : serverStatus === 'ok' ? '✓ متصل' : serverStatus === 'fail' ? '✗ فشل' : 'اختبار'}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">💡 رابط سيرفر FastAPI على GitHub Codespaces</p>
+            </div>
+
+            {/* Edge Function test */}
+            <div className="bg-card border border-border rounded-xl p-4">
+              <label className="text-sm font-bold text-foreground block mb-2">اختبار اتصال الوظائف السحابية</label>
               <div className="flex gap-2 items-center">
-                <span className="text-sm text-muted-foreground flex-1 font-mono">{getEdgeFunctionUrl('system-check')}</span>
-                <button onClick={testConnection} className="px-4 py-2 rounded-lg bg-muted text-muted-foreground hover:text-primary border border-border hover:border-gold-dim text-sm transition-all flex items-center gap-1">
+                <span className="text-sm text-muted-foreground flex-1 font-mono truncate">{getEdgeFunctionUrl('system-check')}</span>
+                <button onClick={testConnection} className="px-4 py-2 rounded-lg bg-muted text-muted-foreground hover:text-foreground border border-border hover:border-ring text-sm transition-all flex items-center gap-1">
                   <TestTube size={14} />
                   اختبار
                 </button>
