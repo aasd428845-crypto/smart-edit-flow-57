@@ -62,8 +62,27 @@ export const VideoPreview = () => {
       addMessage({ type: 'ai', text: '✅ تم رفع الفيديو بنجاح! يمكنك الآن كتابة أمر المونتاج.' });
       toast.success('تم رفع الفيديو بنجاح');
     } catch (err: any) {
-      addMessage({ type: 'error', text: `فشل رفع الفيديو: ${err.message}` });
-      toast.error('فشل رفع الفيديو — الفيديو متاح محلياً');
+      // Fallback: Upload to Supabase Storage
+      addMessage({ type: 'status', text: '⚠️ فشل Vimeo. جارٍ الرفع المباشر...' });
+      toast.warning('فشل Vimeo — جارٍ الرفع المباشر');
+      try {
+        const fileName = `${pid}_${Date.now()}_${file.name}`;
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('videos')
+          .upload(fileName, file, { contentType: file.type, upsert: false });
+        if (uploadError) throw uploadError;
+
+        const { data: publicData } = supabase.storage.from('videos').getPublicUrl(uploadData.path);
+        const publicUrl = publicData.publicUrl;
+
+        setVideoUrl(publicUrl);
+        setVideoSource(publicUrl, 'remote');
+        addMessage({ type: 'ai', text: `✅ تم الرفع المباشر بنجاح! يمكنك الآن كتابة أمر المونتاج.\n💡 تم استخدام الرفع المباشر كبديل لـ Vimeo.` });
+        toast.success('تم الرفع المباشر بنجاح');
+      } catch (storageErr: any) {
+        addMessage({ type: 'error', text: `فشل الرفع المباشر أيضاً: ${storageErr.message}` });
+        toast.error('فشل الرفع — الفيديو متاح محلياً فقط');
+      }
     } finally {
       setIsUploading(false);
     }
