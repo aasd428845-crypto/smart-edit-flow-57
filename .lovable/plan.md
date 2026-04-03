@@ -1,52 +1,64 @@
 
 
-# خطة: تحويل الشات لمحرك تنفيذ تلقائي مع Tool Calling
+# خطة: تفعيل النظام المتكامل للمونتاج الذكي
 
-## الفكرة
-عندما يطلب المستخدم عملية مونتاج عبر Cloud AI (Path 3)، سيقوم الذكاء الاصطناعي باستدعاء أداة `executeVideoCommand` تلقائياً بدلاً من الرد بنص فقط. الواجهة تنفذ الأمر على السيرفر وتعرض الفيديو الناتج مباشرة.
+## ملخص
+ربط كامل بين الواجهة والسيرفر الخلفي (FastAPI) مع دعم رفع مزدوج (Vimeo + Supabase Storage) وعرض نتائج الفيديو مباشرة في الدردشة.
 
-## التغييرات
+## التغييرات المطلوبة
 
-### 1. تحديث Edge Function (`supabase/functions/chat/index.ts`)
+### 1. إنشاء حاوية تخزين `videos` في Supabase Storage
+- إنشاء bucket اسمه `videos` مع سياسات RLS تسمح بالرفع والقراءة
+- هذا يوفر بديلاً مباشراً عند فشل Vimeo
 
-- إضافة `tools` definition لأداة `executeVideoCommand` تقبل: `action`, `video_source`, `params`
-- تحديث System Prompt ليوجه الـ AI لاستخدام الأداة عند طلب مونتاج بدلاً من الشرح النصي
-- عند رد الـ AI بـ `tool_calls`، إرجاعها للواجهة مع الـ `arguments` بدون تنفيذها (لأن Edge Function لا تصل لسيرفرك)
-- عند رد عادي (بدون tool_calls)، إرجاع `reply` كالمعتاد
+**Migration SQL:**
+```sql
+INSERT INTO storage.buckets (id, name, public) VALUES ('videos', 'videos', true);
+CREATE POLICY "Anyone can upload videos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'videos');
+CREATE POLICY "Anyone can read videos" ON storage.objects FOR SELECT USING (bucket_id = 'videos');
+```
+
+### 2. تحديث `VideoPreview.tsx` — استراتيجية الرفع المزدوج
+- عند فشل رفع Vimeo: رفع الملف تلقائياً إلى Supabase Storage (`videos` bucket)
+- استخدام الرابط العام الناتج كـ `video_source`
+- إظهار رسالة تنبيه تقترح "الرفع المباشر" كبديل
 
 ```text
-مسار التنفيذ:
-User → Edge Function → AI (مع tools) → tool_call → يُعاد للواجهة
-→ الواجهة تُرسل POST إلى السيرفر /command → تعرض النتيجة
+المسار الجديد:
+ملف → محاولة Vimeo → فشل؟ → رفع إلى Storage → رابط عام → video_source
 ```
 
-الـ actions المدعومة: `trim`, `denoise`, `speed`, `reverse`, `color_grade`, `add_subtitles`, `montage`, `info`, `transcribe`
+### 3. تحديث `AIChatPanel.tsx` — تحسين منطق التنفيذ
+- التأكد من إرسال `video_source` الصحيح (Vimeo URL أو Storage URL) في كل طلب `/command`
+- إضافة عرض مشغل فيديو مدمج (`<video>`) داخل `MessageBubble` عند وجود `output_url`
+- معالجة أخطاء السيرفر بشكل واضح مع اقتراحات
 
-### 2. تحديث الواجهة (`src/components/editor/AIChatPanel.tsx`)
+### 4. تحديث `MessageBubble.tsx` — مشغل فيديو مدمج
+- عند وجود `outputUrl` في رسالة `execution_result`، عرض مشغل فيديو صغير مدمج في الرسالة
+- الإبقاء على أزرار التحميل والمعاينة الحالية
 
-- إضافة دالة `executeVideoCommand(action, videoSource, params)` ترسل POST إلى `${getLocalBackendUrl()}/command`
-- تعديل Path 3 (Cloud AI): عند استلام `tool_calls` في الرد، تنفيذ الأداة تلقائياً على السيرفر
-- عرض النتيجة كـ `execution_result` مع `outputUrl` و`diffLog`
-- تحميل الفيديو الناتج في المشغل تلقائياً
-- إذا لم يوجد فيديو نشط والـ AI طلب أداة تحتاج فيديو، إظهار تنبيه
-
-**ملاحظة**: Path 1 (إرسال مباشر للسيرفر عند وجود فيديو) يبقى كما هو كمسار سريع. المسار الجديد يُفعّل فقط عندما يمر الطلب عبر Cloud AI.
-
-### تنسيق JSON المُرسل للسيرفر
-
-```json
-{
-  "action": "trim",
-  "video_source": "https://...",
-  "params": { "start": 0, "end": 30 },
-  "project_id": "default",
-  "content_type": "wedding"
-}
+```text
+┌─────────────────────────┐
+│ ⚡ [trim] تم القص       │
+│ ┌─────────────────────┐ │
+│ │   ▶ Video Player    │ │
+│ └─────────────────────┘ │
+│ [تحميل] [معاينة]       │
+│ 📋 سجل التغييرات (3)   │
+│ 💡 الخطوة التالية: ...  │
+└─────────────────────────┘
 ```
+
+### 5. تحديث Edge Function `chat/index.ts` — تمرير `video_source`
+- التأكد من تمرير `video_source` في سياق المشروع للـ AI حتى يتمكن من تحليل الفيديو
+- الـ AI يستخدم هذا الرابط في `tool_calls` تلقائياً
 
 ## الملفات المتأثرة
 | الملف | التعديل |
 |---|---|
-| `supabase/functions/chat/index.ts` | إضافة tools + معالجة tool_calls |
-| `src/components/editor/AIChatPanel.tsx` | إضافة `executeVideoCommand` + معالجة tool_calls من Cloud AI |
+| migration SQL | إنشاء bucket `videos` + RLS |
+| `src/components/editor/VideoPreview.tsx` | Fallback إلى Storage عند فشل Vimeo |
+| `src/components/editor/AIChatPanel.tsx` | ضمان إرسال video_source الصحيح |
+| `src/components/editor/MessageBubble.tsx` | مشغل فيديو مدمج في الرسائل |
+| `supabase/functions/chat/index.ts` | تمرير video_source للأداة |
 
