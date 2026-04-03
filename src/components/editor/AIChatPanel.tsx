@@ -282,7 +282,7 @@ export const AIChatPanel = () => {
       let localOk = false;
       let localData: any = null;
       try {
-        const localRes = await fetch(`${getLocalBackendUrl()}/system/check`);
+        const localRes = await fetch(`${getLocalBackendUrl()}/system/check`, { mode: 'cors' });
         localOk = localRes.ok;
         if (localOk) localData = await localRes.json();
         setLocalConnected(localOk);
