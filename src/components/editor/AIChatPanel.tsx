@@ -63,7 +63,7 @@ export const AIChatPanel = () => {
       .then(res => { if (res.ok) setIsConnected(true); })
       .catch(() => setIsConnected(false));
 
-    fetch(`${getLocalBackendUrl()}/system/check`)
+    fetch(`${getLocalBackendUrl()}/system/check`, { mode: 'cors' })
       .then(res => { if (res.ok) setLocalConnected(true); })
       .catch(() => setLocalConnected(false));
   }, []);
