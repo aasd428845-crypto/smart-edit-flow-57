@@ -25,6 +25,11 @@ const Settings = () => {
   const [showTokens, setShowTokens] = useState<Record<string, boolean>>({});
   const [isAdmin, setIsAdmin] = useState(localStorage.getItem('isAdmin') === 'true');
 
+  const [serverUrl, setServerUrl] = useState(
+    localStorage.getItem('local_backend_url') || 'https://laughing-umbrella-5g7x6699g5xjhpg49-8000.app.github.dev'
+  );
+  const [serverStatus, setServerStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+
   const [settings, setSettings] = useState<APISettings>(() => {
     return {
       anthropicKey: localStorage.getItem('anthropic_key') || '',
