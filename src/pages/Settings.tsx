@@ -46,7 +46,26 @@ const Settings = () => {
     localStorage.setItem('openai_key', settings.openaiKey);
     localStorage.setItem('gemini_key', settings.geminiKey);
     localStorage.setItem('deepseek_key', settings.deepseekKey);
+    localStorage.setItem('local_backend_url', serverUrl.replace(/\/+$/, ''));
     toast.success('✅ تم حفظ الإعدادات');
+  };
+
+  const testServerConnection = async () => {
+    setServerStatus('testing');
+    try {
+      const url = serverUrl.replace(/\/+$/, '');
+      const res = await fetch(`${url}/docs`, { mode: 'cors', signal: AbortSignal.timeout(8000) });
+      if (res.ok) {
+        setServerStatus('ok');
+        toast.success('✅ السيرفر متصل!');
+      } else {
+        setServerStatus('fail');
+        toast.error(`❌ السيرفر أعاد حالة ${res.status}`);
+      }
+    } catch {
+      setServerStatus('fail');
+      toast.error('❌ فشل الاتصال بالسيرفر');
+    }
   };
 
   const testConnection = async () => {
