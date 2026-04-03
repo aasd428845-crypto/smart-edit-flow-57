@@ -67,7 +67,8 @@ export const getEdgeFunctionUrl = (fn: string) => `${SUPABASE_URL}/functions/v1/
 // Local backend URL for FFmpeg command execution
 export const getLocalBackendUrl = () => {
   const saved = localStorage.getItem('local_backend_url');
-  return saved || 'https://laughing-umbrella-5g7x6699g5xjhpg49-8000.app.github.dev';
+  const url = saved || 'https://laughing-umbrella-5g7x6699g5xjhpg49-8000.app.github.dev';
+  return url.replace(/\/+$/, ''); // Remove trailing slashes
 };
 
 export const useEditorStore = create<EditorState>((set) => ({
