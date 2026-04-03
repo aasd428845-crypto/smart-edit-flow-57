@@ -48,10 +48,16 @@ export const MessageBubble = ({ msg, onSendMessage, onPreviewVideo }: MessageBub
         {/* Main text */}
         <p className="whitespace-pre-wrap">{msg.text}</p>
 
-        {/* Output URL - download & preview */}
+        {/* Output URL - inline video player + download & preview */}
         {msg.outputUrl && (
           <div className="mt-2 p-2 bg-primary/10 rounded-lg border border-primary/20">
-            <p className="text-xs text-primary mb-1.5">📁 الملف جاهز:</p>
+            {/* Inline video player */}
+            <video
+              src={msg.outputUrl}
+              controls
+              preload="metadata"
+              className="w-full rounded-md mb-2 max-h-48 bg-black"
+            />
             <div className="flex gap-2">
               <a
                 href={msg.outputUrl}
@@ -67,7 +73,7 @@ export const MessageBubble = ({ msg, onSendMessage, onPreviewVideo }: MessageBub
                   className="flex items-center gap-1 px-3 py-1.5 rounded-md border border-primary text-primary text-xs hover:bg-primary/10 transition-colors"
                 >
                   <Play size={12} />
-                  معاينة
+                  معاينة كاملة
                 </button>
               )}
             </div>
