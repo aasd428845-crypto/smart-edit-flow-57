@@ -33,6 +33,7 @@ const executeVideoCommand = async (
 ): Promise<any> => {
   const res = await fetch(`${getLocalBackendUrl()}/command`, {
     method: 'POST',
+    mode: 'cors',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       action,
@@ -63,7 +64,7 @@ export const AIChatPanel = () => {
       .then(res => { if (res.ok) setIsConnected(true); })
       .catch(() => setIsConnected(false));
 
-    fetch(`${getLocalBackendUrl()}/system/check`)
+    fetch(`${getLocalBackendUrl()}/system/check`, { mode: 'cors' })
       .then(res => { if (res.ok) setLocalConnected(true); })
       .catch(() => setLocalConnected(false));
   }, []);
@@ -282,7 +283,7 @@ export const AIChatPanel = () => {
       let localOk = false;
       let localData: any = null;
       try {
-        const localRes = await fetch(`${getLocalBackendUrl()}/system/check`);
+        const localRes = await fetch(`${getLocalBackendUrl()}/system/check`, { mode: 'cors' });
         localOk = localRes.ok;
         if (localOk) localData = await localRes.json();
         setLocalConnected(localOk);
