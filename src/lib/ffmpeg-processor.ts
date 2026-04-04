@@ -49,7 +49,8 @@ async function writeInput(ff: FFmpeg, videoSource: string): Promise<string> {
 
 async function readOutput(ff: FFmpeg, outputName: string): Promise<string> {
   const data = await ff.readFile(outputName);
-  const blob = new Blob([data], { type: 'video/mp4' });
+  const uint8 = data instanceof Uint8Array ? data : new TextEncoder().encode(data as string);
+  const blob = new Blob([uint8.buffer as ArrayBuffer], { type: 'video/mp4' });
   return URL.createObjectURL(blob);
 }
 
