@@ -4,6 +4,7 @@ import { useEditorStore, statusMessages, getEdgeFunctionUrl, getLocalBackendUrl 
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { MessageBubble } from './MessageBubble';
+import { toolHandlers } from '@/lib/tools';
 
 const aiAgents = [
   { id: 'claude', label: 'Claude', icon: '🟣' },
