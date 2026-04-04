@@ -26,15 +26,8 @@ const tools = [
           action: {
             type: "string",
             enum: [
-              "trim",
-              "denoise",
-              "speed",
-              "reverse",
-              "color_grade",
-              "add_subtitles",
-              "montage",
-              "info",
-              "transcribe",
+              "trim", "denoise", "speed", "reverse", "color_grade",
+              "add_subtitles", "montage", "info", "transcribe",
             ],
             description: "The video editing action to perform",
           },
@@ -45,6 +38,63 @@ const tools = [
           },
         },
         required: ["action"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_vimeo_info",
+      description:
+        "Get metadata about a Vimeo video (title, author, duration, thumbnail). Use when the user asks about a Vimeo video link or wants info about a Vimeo URL.",
+      parameters: {
+        type: "object",
+        properties: {
+          video_url: {
+            type: "string",
+            description: "The full Vimeo video URL, e.g. https://vimeo.com/123456",
+          },
+        },
+        required: ["video_url"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "transcribe_video",
+      description:
+        "Transcribe speech from a video to text using AI. Use when the user asks to convert video audio to text, transcribe, or 'فرّغ الكلام'.",
+      parameters: {
+        type: "object",
+        properties: {
+          video_url: {
+            type: "string",
+            description: "URL of the video to transcribe",
+          },
+        },
+        required: ["video_url"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "remove_background",
+      description:
+        "Remove the background from an image. Use when the user asks to remove background, isolate subject, or 'أزل الخلفية'.",
+      parameters: {
+        type: "object",
+        properties: {
+          image_url: {
+            type: "string",
+            description: "URL of the image to process",
+          },
+        },
+        required: ["image_url"],
         additionalProperties: false,
       },
     },
@@ -63,10 +113,7 @@ serve(async (req) => {
     if (!message || typeof message !== "string") {
       return new Response(
         JSON.stringify({ error: "message is required" }),
-        {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -74,10 +121,7 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) {
       return new Response(
         JSON.stringify({ error: "LOVABLE_API_KEY is not configured" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -87,19 +131,17 @@ serve(async (req) => {
 
 قواعد صارمة:
 - عندما يطلب المستخدم أي عملية مونتاج (قص، تسريع، عكس، تنقية صوت، تصحيح ألوان، ترجمة، مونتاج، معلومات، إلخ)، يجب أن تستدعي أداة executeVideoCommand فوراً.
+- عندما يطلب المستخدم معلومات عن فيديو Vimeo أو يرسل رابط Vimeo، استدعِ أداة get_vimeo_info.
+- عندما يطلب المستخدم تفريغ أو نسخ فيديو لنص، استدعِ أداة transcribe_video مع رابط الفيديو النشط.
+- عندما يطلب المستخدم إزالة خلفية صورة، استدعِ أداة remove_background.
 - لا تشرح كيفية القص أو المونتاج. لا تعطِ تعليمات نصية. فقط نفّذ الأداة.
 - إذا كان الطلب محادثة عادية أو سؤال لا يتعلق بتحرير فيديو، أجب نصياً بشكل مختصر.
 
 الأدوات المتاحة:
-- trim: قص الفيديو (params: start, end بالثواني)
-- denoise: تنقية الصوت
-- speed: تغيير السرعة (params: factor)
-- reverse: عكس الفيديو
-- color_grade: تصحيح الألوان (params: style مثل "golden", "cinematic", "vintage")
-- add_subtitles: إضافة ترجمة
-- montage: مونتاج كامل
-- info: معلومات عن الفيديو
-- transcribe: تفريغ الكلام لنص
+- executeVideoCommand: عمليات المونتاج (trim, denoise, speed, reverse, color_grade, add_subtitles, montage, info, transcribe)
+- get_vimeo_info: جلب معلومات فيديو Vimeo
+- transcribe_video: تفريغ الكلام لنص
+- remove_background: إزالة خلفية صورة
 
 ${project_context?.cinematic ? "- الوضع السينمائي مفعّل: استخدم أسلوب سينمائي متقدم" : ""}
 ${project_context?.template_id ? `- القالب المختار: ${project_context.template_id}` : ""}
@@ -129,39 +171,27 @@ ${project_context?.video_source ? `- الفيديو النشط: ${project_contex
     if (!response.ok) {
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({
-            error: "تم تجاوز حد الطلبات، يرجى المحاولة لاحقاً",
-          }),
-          {
-            status: 429,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          JSON.stringify({ error: "تم تجاوز حد الطلبات، يرجى المحاولة لاحقاً" }),
+          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       if (response.status === 402) {
         return new Response(
           JSON.stringify({ error: "رصيد غير كافٍ، يرجى شحن الحساب" }),
-          {
-            status: 402,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
       const errText = await response.text();
       console.error("AI gateway error:", response.status, errText);
       return new Response(
         JSON.stringify({ error: `خطأ من بوابة AI: ${response.status}` }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const data = await response.json();
     const choice = data.choices?.[0];
 
-    // Check if AI returned tool calls
     if (choice?.message?.tool_calls?.length) {
       const toolCalls = choice.message.tool_calls.map((tc: any) => ({
         name: tc.function.name,
@@ -169,17 +199,11 @@ ${project_context?.video_source ? `- الفيديو النشط: ${project_contex
       }));
       return new Response(
         JSON.stringify({ tool_calls: toolCalls }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        }
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Regular text reply
-    const reply =
-      choice?.message?.content || "لم أتمكن من الرد";
-
+    const reply = choice?.message?.content || "لم أتمكن من الرد";
     return new Response(JSON.stringify({ reply }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -187,13 +211,8 @@ ${project_context?.video_source ? `- الفيديو النشط: ${project_contex
   } catch (e) {
     console.error("chat error:", e);
     return new Response(
-      JSON.stringify({
-        error: e instanceof Error ? e.message : "خطأ غير معروف",
-      }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
+      JSON.stringify({ error: e instanceof Error ? e.message : "خطأ غير معروف" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
