@@ -1,10 +1,11 @@
 import { useRef, useState, useEffect } from 'react';
 import { Send, Paperclip, Activity, ChevronDown } from 'lucide-react';
-import { useEditorStore, statusMessages, getEdgeFunctionUrl, getLocalBackendUrl } from '@/store/editorStore';
+import { useEditorStore, statusMessages, getEdgeFunctionUrl } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { MessageBubble } from './MessageBubble';
 import { toolHandlers } from '@/lib/tools';
+import { processVideo, type FFmpegAction } from '@/lib/ffmpeg-processor';
 
 const aiAgents = [
   { id: 'claude', label: 'Claude', icon: '🟣' },
@@ -24,28 +25,7 @@ const quickSuggestions = [
   { label: '🔄 اعكس', message: 'اعكس الفيديو' },
 ];
 
-// Execute a video command on the backend server
-const executeVideoCommand = async (
-  action: string,
-  videoSource: string,
-  params: Record<string, any> = {},
-  projectId: string = 'default',
-  contentType: string = 'default',
-): Promise<any> => {
-  const res = await fetch(`${getLocalBackendUrl()}/command`, {
-    method: 'POST',
-    mode: 'cors',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action,
-      video_source: videoSource,
-      params,
-      project_id: projectId,
-      content_type: contentType,
-    }),
-  });
-  return res.json();
-};
+const VALID_ACTIONS: FFmpegAction[] = ['trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info'];
 
 export const AIChatPanel = () => {
   const {
@@ -56,7 +36,6 @@ export const AIChatPanel = () => {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [localConnected, setLocalConnected] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -64,10 +43,6 @@ export const AIChatPanel = () => {
     fetch(getEdgeFunctionUrl('system-check'))
       .then(res => { if (res.ok) setIsConnected(true); })
       .catch(() => setIsConnected(false));
-
-    fetch(`${getLocalBackendUrl()}/system/check`, { mode: 'cors' })
-      .then(res => { if (res.ok) setLocalConnected(true); })
-      .catch(() => setLocalConnected(false));
   }, []);
 
   useEffect(() => {
@@ -102,6 +77,39 @@ export const AIChatPanel = () => {
     toast.success('▶️ تم تحميل الفيديو في المشغل');
   };
 
+  // Execute video command locally using FFmpeg.wasm
+  const executeLocalVideoCommand = async (action: string, params: Record<string, any> = {}) => {
+    if (!videoSource) {
+      addMessage({ type: 'error', text: '⚠️ لا يوجد فيديو نشط. يرجى رفع فيديو أولاً.' });
+      toast.warning('⚠️ هذا الأمر يحتاج فيديو.');
+      return;
+    }
+
+    if (!VALID_ACTIONS.includes(action as FFmpegAction)) {
+      addMessage({ type: 'ai', text: `⚠️ الإجراء "${action}" غير مدعوم حالياً في المعالجة المحلية.` });
+      return;
+    }
+
+    addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ "${action}" محلياً في المتصفح...` });
+
+    const result = await processVideo(action as FFmpegAction, videoSource, params);
+
+    if (result.success) {
+      addMessage({
+        type: 'execution_result',
+        text: result.message,
+        outputUrl: result.outputUrl,
+        action,
+      });
+      if (result.outputUrl) {
+        setVideoSource(result.outputUrl, 'blob');
+        toast.success(`✅ ${action} - تم!`);
+      }
+    } else {
+      addMessage({ type: 'error', text: result.message });
+    }
+  };
+
   // Handle tool calls from Cloud AI
   const handleToolCalls = async (toolCalls: Array<{ name: string; arguments: any }>) => {
     for (const tc of toolCalls) {
@@ -124,46 +132,10 @@ export const AIChatPanel = () => {
         continue;
       }
 
-      // Backend tool: executeVideoCommand
+      // Local FFmpeg: executeVideoCommand
       if (tc.name === 'executeVideoCommand') {
         const { action, params = {} } = tc.arguments;
-
-        if (!videoSource) {
-          addMessage({ type: 'error', text: '⚠️ لا يوجد فيديو نشط. يرجى رفع فيديو أولاً.' });
-          toast.warning('⚠️ هذا الأمر يحتاج فيديو.');
-          return;
-        }
-
-        addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ: ${action}...` });
-
-        try {
-          const result = await executeVideoCommand(
-            action, videoSource, params,
-            projectId || 'default', contentType || 'default'
-          );
-
-          if (result.status === 'success') {
-            addMessage({
-              type: 'execution_result',
-              text: result.message || `✅ تم تنفيذ ${action}`,
-              action: result.action,
-              outputUrl: result.output_url,
-              diffLog: result.diff_log,
-              nextSteps: result.next_steps,
-              missingAssets: result.missing_assets,
-            });
-            if (result.output_url) {
-              setVideoSource(result.output_url, 'remote');
-              toast.success(`✅ ${action} - تم!`);
-            }
-          } else if (result.status === 'error') {
-            addMessage({ type: 'error', text: result.message || `❌ فشل ${action}` });
-          } else {
-            addMessage({ type: 'ai', text: result.message || result.reply || 'تم' });
-          }
-        } catch (err: any) {
-          addMessage({ type: 'error', text: `⚠️ فشل الاتصال بالسيرفر: ${err?.message || 'غير معروف'}` });
-        }
+        await executeLocalVideoCommand(action, params);
       }
     }
   };
@@ -175,85 +147,7 @@ export const AIChatPanel = () => {
     setIsLoading(true);
 
     try {
-      // Path 1: Local backend /command (when video exists and local server connected)
-      if (videoSource && localConnected) {
-        try {
-          const cmdRes = await fetch(`${getLocalBackendUrl()}/command`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              command: text,
-              video_source: videoSource,
-              project_id: projectId || 'default',
-              current_time: currentTime,
-              content_type: contentType || 'default',
-            }),
-          });
-          const cmdData = await cmdRes.json();
-
-          if (cmdData.status === 'success') {
-            addMessage({
-              type: 'execution_result', text: cmdData.message, action: cmdData.action,
-              outputUrl: cmdData.output_url, diffLog: cmdData.diff_log,
-              nextSteps: cmdData.next_steps, missingAssets: cmdData.missing_assets,
-            });
-            if (cmdData.output_url) {
-              setVideoSource(cmdData.output_url, 'remote');
-              toast.success(`✅ ${cmdData.action} - تم!`);
-            }
-            return;
-          }
-          if (cmdData.status === 'clarification_needed') {
-            addMessage({ type: 'clarification', text: cmdData.question });
-            return;
-          }
-          if (cmdData.status === 'needs_video') {
-            addMessage({ type: 'ai', text: cmdData.message });
-            toast.warning('⚠️ هذا الأمر يحتاج فيديو.');
-            return;
-          }
-          if (cmdData.status === 'error') {
-            addMessage({ type: 'error', text: cmdData.message || 'فشل تنفيذ الأمر', missingAssets: cmdData.missing_assets, nextSteps: cmdData.next_steps });
-            return;
-          }
-          if (cmdData.status === 'chat_response') {
-            addMessage({ type: 'ai', text: cmdData.reply || cmdData.message });
-            return;
-          }
-        } catch {
-          setLocalConnected(false);
-        }
-      }
-
-      // Path 2: Try local /chat first if connected
-      if (localConnected) {
-        try {
-          const chatRes = await fetch(`${getLocalBackendUrl()}/chat`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: text,
-              conversation_history: messages.slice(-8).map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.text })),
-              project_context: {
-                has_video: !!videoSource,
-                video_source: videoSource,
-                content_type: contentType,
-                template: selectedTemplate?.name,
-              },
-            }),
-          });
-          const chatData = await chatRes.json();
-          addMessage({ type: 'ai', text: chatData.reply || chatData.message || 'تم' });
-          if (chatData.needs_video && !videoSource) {
-            toast.warning('⚠️ هذا الأمر يحتاج فيديو.');
-          }
-          return;
-        } catch {
-          setLocalConnected(false);
-        }
-      }
-
-      // Path 3: Cloud AI with Tool Calling
+      // Cloud AI with Tool Calling — AI decides which tool to invoke
       const res = await fetch(getEdgeFunctionUrl('chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -301,25 +195,7 @@ export const AIChatPanel = () => {
       const cloudOk = cloudRes.ok;
       setIsConnected(cloudOk);
 
-      let localOk = false;
-      let localData: any = null;
-      try {
-        const localRes = await fetch(`${getLocalBackendUrl()}/system/check`, { mode: 'cors' });
-        localOk = localRes.ok;
-        if (localOk) localData = await localRes.json();
-        setLocalConnected(localOk);
-      } catch { setLocalConnected(false); }
-
-      let summary = `🖥️ حالة المنصة:\n☁️ Cloud AI: ${cloudOk ? '✅ متصل' : '❌ غير متصل'}\n🏠 سيرفر محلي (${getLocalBackendUrl()}): ${localOk ? '✅ متصل' : '❌ غير متصل'}`;
-
-      if (localData) {
-        if (localData.missing_libraries?.length) {
-          summary += `\n\n📦 مكتبات ناقصة:\n${localData.missing_libraries.map((m: any) => `• ${m.name}: \`${m.install_cmd}\``).join('\n')}`;
-        }
-        if (localData.assets) {
-          summary += `\n\n📁 الأصول:\n${Object.entries(localData.assets).map(([k, v]) => `• ${k}: ${v ? '✅' : '❌'}`).join('\n')}`;
-        }
-      }
+      const summary = `🖥️ حالة المنصة:\n☁️ Cloud AI: ${cloudOk ? '✅ متصل' : '❌ غير متصل'}\n🎞️ FFmpeg.wasm: ✅ مدمج في المتصفح\n📦 الأدوات: get_vimeo_info, transcribe, remove_background, executeVideoCommand (محلي)`;
       addMessage({ type: 'ai', text: summary });
     } catch (err: any) {
       addMessage({ type: 'error', text: `⚠️ خطأ في الفحص: ${err?.message || 'غير معروف'}` });
@@ -343,7 +219,7 @@ export const AIChatPanel = () => {
           </button>
         </div>
 
-        {/* Agent selector - compact */}
+        {/* Agent selector */}
         <div className="relative">
           <button
             onClick={() => setShowAgentMenu(!showAgentMenu)}
@@ -375,11 +251,11 @@ export const AIChatPanel = () => {
         <div className="flex items-center gap-3 text-xs">
           <span className="flex items-center gap-1">
             <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-success' : 'bg-muted-foreground'}`} />
-            ☁️
+            ☁️ AI
           </span>
           <span className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${localConnected ? 'bg-success' : 'bg-muted-foreground'}`} />
-            🏠
+            <span className="w-2 h-2 rounded-full bg-success" />
+            🎞️ FFmpeg
           </span>
           {videoSource && <span className="text-primary text-xs">🎥 فيديو نشط</span>}
         </div>
