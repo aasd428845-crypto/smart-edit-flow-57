@@ -1,64 +1,56 @@
 
 
-# خطة: تفعيل النظام المتكامل للمونتاج الذكي
+# خطة: إضافة أدوات ذكاء اصطناعي تعمل بدون سيرفر
 
-## ملخص
-ربط كامل بين الواجهة والسيرفر الخلفي (FastAPI) مع دعم رفع مزدوج (Vimeo + Supabase Storage) وعرض نتائج الفيديو مباشرة في الدردشة.
+## الفكرة
+إضافة 3 أدوات جديدة تعمل مباشرة من المتصفح بدون الحاجة للسيرفر الخلفي (FastAPI):
+1. **جلب معلومات Vimeo** — عبر Vimeo oEmbed API (مجاني)
+2. **نسخ الفيديو لنص** — عبر AssemblyAI API
+3. **إزالة خلفية صورة** — عبر Remove.bg API
 
-## التغييرات المطلوبة
+هذه الأدوات تُضاف بجانب أداة `executeVideoCommand` الحالية، فعندما يطلب المستخدم "معلومات عن فيديو Vimeo" أو "انسخ الفيديو" يتم التنفيذ مباشرة من المتصفح.
 
-### 1. إنشاء حاوية تخزين `videos` في Supabase Storage
-- إنشاء bucket اسمه `videos` مع سياسات RLS تسمح بالرفع والقراءة
-- هذا يوفر بديلاً مباشراً عند فشل Vimeo
+## التغييرات
 
-**Migration SQL:**
-```sql
-INSERT INTO storage.buckets (id, name, public) VALUES ('videos', 'videos', true);
-CREATE POLICY "Anyone can upload videos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'videos');
-CREATE POLICY "Anyone can read videos" ON storage.objects FOR SELECT USING (bucket_id = 'videos');
-```
+### 1. إنشاء `src/lib/tools.ts`
+ملف يحتوي على الأدوات الثلاث:
+- `tool_get_vimeo_info(video_url)` — يستدعي `vimeo.com/api/oembed.json`
+- `tool_transcribe(video_url)` — يرسل للـ AssemblyAI مع polling حتى الاكتمال
+- `tool_remove_background(image_url)` — يرسل للـ Remove.bg ويعيد base64
+- `toolHandlers` map لربط اسم الأداة بالدالة
 
-### 2. تحديث `VideoPreview.tsx` — استراتيجية الرفع المزدوج
-- عند فشل رفع Vimeo: رفع الملف تلقائياً إلى Supabase Storage (`videos` bucket)
-- استخدام الرابط العام الناتج كـ `video_source`
-- إظهار رسالة تنبيه تقترح "الرفع المباشر" كبديل
+**ملاحظة أمنية**: مفاتيح AssemblyAI و Remove.bg ستُخزن كـ secrets في Edge Function بدلاً من `VITE_` env vars لتجنب تسريبها في المتصفح. أداة Vimeo لا تحتاج مفتاح.
+
+### 2. تحديث Edge Function `chat/index.ts`
+- إضافة 3 أدوات جديدة لمصفوفة `tools`:
+  - `get_vimeo_info` (video_url)
+  - `transcribe_video` (video_url)  
+  - `remove_background` (image_url)
+- تحديث System Prompt ليعرف الـ AI متى يستخدم كل أداة
+- عند رد AI بـ tool_call لهذه الأدوات، يُرجعها للواجهة مثل `executeVideoCommand`
+
+### 3. تحديث `AIChatPanel.tsx`
+- استيراد `toolHandlers` من `src/lib/tools.ts`
+- في `handleToolCalls`: إضافة فرع لمعالجة الأدوات الجديدة
+  - إذا كان اسم الأداة في `toolHandlers` → تنفيذها مباشرة في المتصفح
+  - إذا كان `executeVideoCommand` → إرسال للسيرفر كالمعتاد
+- عرض مؤشر "جارٍ التنفيذ..." أثناء العمل
+- عرض النتيجة كرسالة `ai` أو `execution_result`
+
+### 4. إعداد المفاتيح
+- أداة Vimeo: لا تحتاج مفتاح (مجانية)
+- AssemblyAI و Remove.bg: سيتم تنفيذهما عبر edge function proxy جديدة لحماية المفاتيح، أو مباشرة من المتصفح إذا وفّر المستخدم المفاتيح في الإعدادات
 
 ```text
-المسار الجديد:
-ملف → محاولة Vimeo → فشل؟ → رفع إلى Storage → رابط عام → video_source
+مسار التنفيذ:
+User → "معلومات عن vimeo.com/123" → Edge Function → AI يستدعي get_vimeo_info
+→ يعود للواجهة → تنفيذ مباشر في المتصفح → عرض النتيجة
 ```
-
-### 3. تحديث `AIChatPanel.tsx` — تحسين منطق التنفيذ
-- التأكد من إرسال `video_source` الصحيح (Vimeo URL أو Storage URL) في كل طلب `/command`
-- إضافة عرض مشغل فيديو مدمج (`<video>`) داخل `MessageBubble` عند وجود `output_url`
-- معالجة أخطاء السيرفر بشكل واضح مع اقتراحات
-
-### 4. تحديث `MessageBubble.tsx` — مشغل فيديو مدمج
-- عند وجود `outputUrl` في رسالة `execution_result`، عرض مشغل فيديو صغير مدمج في الرسالة
-- الإبقاء على أزرار التحميل والمعاينة الحالية
-
-```text
-┌─────────────────────────┐
-│ ⚡ [trim] تم القص       │
-│ ┌─────────────────────┐ │
-│ │   ▶ Video Player    │ │
-│ └─────────────────────┘ │
-│ [تحميل] [معاينة]       │
-│ 📋 سجل التغييرات (3)   │
-│ 💡 الخطوة التالية: ...  │
-└─────────────────────────┘
-```
-
-### 5. تحديث Edge Function `chat/index.ts` — تمرير `video_source`
-- التأكد من تمرير `video_source` في سياق المشروع للـ AI حتى يتمكن من تحليل الفيديو
-- الـ AI يستخدم هذا الرابط في `tool_calls` تلقائياً
 
 ## الملفات المتأثرة
 | الملف | التعديل |
 |---|---|
-| migration SQL | إنشاء bucket `videos` + RLS |
-| `src/components/editor/VideoPreview.tsx` | Fallback إلى Storage عند فشل Vimeo |
-| `src/components/editor/AIChatPanel.tsx` | ضمان إرسال video_source الصحيح |
-| `src/components/editor/MessageBubble.tsx` | مشغل فيديو مدمج في الرسائل |
-| `supabase/functions/chat/index.ts` | تمرير video_source للأداة |
+| `src/lib/tools.ts` | ملف جديد — 3 أدوات |
+| `supabase/functions/chat/index.ts` | إضافة 3 tools جديدة للـ AI |
+| `src/components/editor/AIChatPanel.tsx` | معالجة الأدوات الجديدة client-side |
 
