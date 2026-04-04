@@ -64,11 +64,11 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 export const getEdgeFunctionUrl = (fn: string) => `${SUPABASE_URL}/functions/v1/${fn}`;
 
-// Local backend URL for FFmpeg command execution
+// Local backend URL — kept for backward compat but no longer used for video processing
 export const getLocalBackendUrl = () => {
   const saved = localStorage.getItem('local_backend_url');
-  const url = saved || 'https://laughing-umbrella-5g7x6699g5xjhpg49-8000.app.github.dev';
-  return url.replace(/\/+$/, ''); // Remove trailing slashes
+  const url = saved || '';
+  return url.replace(/\/+$/, '');
 };
 
 export const useEditorStore = create<EditorState>((set) => ({

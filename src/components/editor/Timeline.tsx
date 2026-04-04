@@ -2,12 +2,13 @@ import { useEditorStore, getEdgeFunctionUrl } from '@/store/editorStore';
 import { toast } from 'sonner';
 import { Music, Film, FileText, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { useRef } from 'react';
+import { processVideo } from '@/lib/ffmpeg-processor';
 
 export const Timeline = () => {
   const {
     currentTime, setCurrentTime, videoDuration, isPlaying, setIsPlaying,
-    videoSource, sourceType, projectId, selectedTemplate, contentType,
-    cinematicMode, isProcessing, setIsProcessing, addMessage,
+    videoSource, projectId, selectedTemplate, contentType,
+    cinematicMode, isProcessing, setIsProcessing, addMessage, setVideoSource,
   } = useEditorStore();
   const trackRef = useRef<HTMLDivElement>(null);
 
@@ -34,33 +35,24 @@ export const Timeline = () => {
     }
     setIsProcessing(true);
     addMessage({ type: 'user', text: cinematicMode ? '🎥 مونتاج سينمائي' : '🎬 مونتاج كامل' });
+    addMessage({ type: 'status', text: '⏳ جارٍ المعالجة محلياً في المتصفح...' });
 
     try {
-      const res = await fetch(getEdgeFunctionUrl('chat'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: cinematicMode ? 'مونتاج سينمائي كامل' : 'مونتاج كامل',
-          agent: 'gemini',
-          conversation_history: [],
-          project_context: {
-            video_source: videoSource,
-            source_type: sourceType,
-            current_time: currentTime,
-            project_id: projectId || crypto.randomUUID(),
-            template_id: selectedTemplate?.id || null,
-            content_type: contentType || 'default',
-            cinematic: cinematicMode,
-          },
-        }),
+      const result = await processVideo('montage', videoSource, {
+        style: cinematicMode ? 'cinematic' : 'warm',
       });
-      if (!res.ok) throw new Error('فشل الاتصال');
-      const data = await res.json();
-      addMessage({ type: 'ai', text: `✅ ${data.reply || data.message || 'تم إرسال طلب المعالجة'}`, status: 'processing' });
-      toast.success('تم إرسال طلب المعالجة');
+
+      if (result.success && result.outputUrl) {
+        setVideoSource(result.outputUrl, 'blob');
+        addMessage({ type: 'execution_result', text: result.message, outputUrl: result.outputUrl, status: 'completed' });
+        toast.success('✅ تم المونتاج بنجاح!');
+      } else {
+        addMessage({ type: 'error', text: result.message });
+        toast.error('فشل المونتاج');
+      }
     } catch {
-      addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم' });
-      toast.error('فشل الاتصال بالخادم');
+      addMessage({ type: 'error', text: '⚠️ فشلت المعالجة المحلية' });
+      toast.error('فشلت المعالجة');
     } finally {
       setIsProcessing(false);
     }
