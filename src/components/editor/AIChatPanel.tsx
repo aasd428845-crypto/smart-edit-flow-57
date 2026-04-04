@@ -105,6 +105,26 @@ export const AIChatPanel = () => {
   // Handle tool calls from Cloud AI
   const handleToolCalls = async (toolCalls: Array<{ name: string; arguments: any }>) => {
     for (const tc of toolCalls) {
+      // Client-side tools (Vimeo info, transcribe, remove bg)
+      if (toolHandlers[tc.name]) {
+        addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ: ${tc.name}...` });
+        try {
+          const result = await toolHandlers[tc.name](tc.arguments);
+          if (result.success) {
+            const formatted = typeof result.data === 'object'
+              ? Object.entries(result.data).map(([k, v]) => `• **${k}**: ${v}`).join('\n')
+              : String(result.data);
+            addMessage({ type: 'ai', text: `✅ نتيجة ${tc.name}:\n\n${formatted}` });
+          } else {
+            addMessage({ type: 'error', text: `❌ فشل ${tc.name}: ${result.error}` });
+          }
+        } catch (err: any) {
+          addMessage({ type: 'error', text: `⚠️ خطأ في ${tc.name}: ${err?.message || 'غير معروف'}` });
+        }
+        continue;
+      }
+
+      // Backend tool: executeVideoCommand
       if (tc.name === 'executeVideoCommand') {
         const { action, params = {} } = tc.arguments;
 
