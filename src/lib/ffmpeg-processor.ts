@@ -4,7 +4,7 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 let ffmpeg: FFmpeg | null = null;
 let loaded = false;
 
-export type FFmpegAction = 'trim' | 'speed' | 'reverse' | 'denoise' | 'color_grade' | 'montage' | 'info';
+export type FFmpegAction = 'trim' | 'speed' | 'reverse' | 'denoise' | 'color_grade' | 'montage' | 'info' | 'add_subtitles' | 'transcribe';
 
 export interface ProcessResult {
   success: boolean;
@@ -123,6 +123,14 @@ export async function processVideo(
         return {
           success: true,
           message: '📊 تم تحليل الفيديو. راجع وحدة التحكم للتفاصيل.',
+        };
+      }
+
+      case 'add_subtitles':
+      case 'transcribe': {
+        return {
+          success: false,
+          message: `⚠️ إجراء "${action}" يحتاج إلى معالجة سحابية (Cloud) وهي غير متوفرة محلياً حالياً.`,
         };
       }
 

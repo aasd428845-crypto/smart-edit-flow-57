@@ -25,7 +25,7 @@ const quickSuggestions = [
   { label: '🔄 اعكس', message: 'اعكس الفيديو' },
 ];
 
-const VALID_ACTIONS: FFmpegAction[] = ['trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info'];
+const VALID_ACTIONS: FFmpegAction[] = ['trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info', 'add_subtitles', 'transcribe'];
 
 export const AIChatPanel = () => {
   const {

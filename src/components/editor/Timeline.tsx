@@ -23,7 +23,7 @@ export const Timeline = () => {
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!trackRef.current || videoDuration <= 0) return;
     const rect = trackRef.current.getBoundingClientRect();
-    const clickX = rect.right - e.clientX;
+    const clickX = e.clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, clickX / rect.width));
     setCurrentTime(ratio * videoDuration);
   };
@@ -62,7 +62,7 @@ export const Timeline = () => {
     <div className="h-[120px] bg-secondary border-t border-border px-4 py-2 flex flex-col">
       {/* Tracks */}
       <div ref={trackRef} onClick={handleSeek} className="flex-1 relative cursor-pointer space-y-1">
-        <div className="absolute top-0 bottom-0 w-0.5 bg-destructive z-10 transition-all" style={{ right: `${progress}%` }}>
+        <div className="absolute top-0 bottom-0 w-0.5 bg-destructive z-10 transition-all" style={{ left: `${progress}%` }}>
           <div className="w-2 h-2 bg-destructive rounded-full -translate-x-[3px] -translate-y-1" />
         </div>
         <div className="flex items-center gap-2 h-5">
