@@ -27,7 +27,7 @@ const tools = [
             type: "string",
             enum: [
               "trim", "denoise", "speed", "reverse", "color_grade",
-              "add_subtitles", "montage", "info", "transcribe",
+              "add_subtitles", "montage", "info", "transcribe", "rotate",
             ],
             description: "The video editing action to perform",
           },

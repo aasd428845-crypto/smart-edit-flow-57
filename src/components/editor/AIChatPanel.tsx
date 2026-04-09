@@ -25,7 +25,7 @@ const quickSuggestions = [
   { label: '🔄 اعكس', message: 'اعكس الفيديو' },
 ];
 
-const VALID_ACTIONS: FFmpegAction[] = ['trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info', 'add_subtitles', 'transcribe'];
+const VALID_ACTIONS: FFmpegAction[] = ['trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info', 'add_subtitles', 'transcribe', 'rotate'];
 
 export const AIChatPanel = () => {
   const {
@@ -173,6 +173,10 @@ export const AIChatPanel = () => {
       // Handle tool_calls from AI
       if (data.tool_calls?.length) {
         await handleToolCalls(data.tool_calls);
+        // If there's also a reply along with tool calls, show it
+        if (data.reply) {
+          addMessage({ type: 'ai', text: data.reply });
+        }
         return;
       }
 

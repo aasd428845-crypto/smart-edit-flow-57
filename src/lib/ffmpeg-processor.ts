@@ -4,8 +4,7 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 let ffmpeg: FFmpeg | null = null;
 let loaded = false;
 
-export type FFmpegAction = 'trim' | 'speed' | 'reverse' | 'denoise' | 'color_grade' | 'montage' | 'info' | 'add_subtitles' | 'transcribe';
-
+export type FFmpegAction =  'trim' | 'speed' | 'reverse' | 'denoise' | 'color_grade' | 'montage' | 'info' | 'add_subtitles' | 'transcribe' | 'rotate';
 export interface ProcessResult {
   success: boolean;
   outputUrl?: string;
@@ -132,6 +131,15 @@ export async function processVideo(
           success: false,
           message: `⚠️ إجراء "${action}" يحتاج إلى معالجة سحابية (Cloud) وهي غير متوفرة محلياً حالياً.`,
         };
+      }
+
+      case 'rotate': {
+        const degrees = params.degrees || 90;
+        let vf = 'transpose=1'; // default 90 clockwise
+        if (degrees === 180) vf = 'transpose=2,transpose=2';
+        if (degrees === 270 || degrees === -90) vf = 'transpose=2';
+        args = ['-i', inputName, '-vf', vf, '-c:a', 'copy', outputName];
+        break;
       }
 
       default:

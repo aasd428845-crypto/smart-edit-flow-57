@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Scissors, RotateCw, Type, Image, LayoutTemplate, Save, Settings, Shield, Sparkles, Menu, X } from 'lucide-react';
 import { useEditorStore, getEdgeFunctionUrl, getLocalBackendUrl, defaultTemplates } from '@/store/editorStore';
+import { processVideo } from '@/lib/ffmpeg-processor';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -79,7 +80,28 @@ export const TopToolbar = () => {
           }),
         });
         const data = await res.json();
-        addMessage({ type: 'ai', text: `✅ ${data.reply || 'تم إرسال الأمر'}`, status: 'processing' });
+        
+        if (data.tool_calls?.length) {
+          // Note: AIChatPanel handles tool calls globally if messages are added, 
+          // but here we trigger them specifically for toolbar actions
+          for (const tc of data.tool_calls) {
+            if (tc.name === 'executeVideoCommand') {
+              const { action, params = {} } = tc.arguments;
+              // We need a way to trigger executeLocalVideoCommand from here
+              // For now, adding a status message to inform the user
+              addMessage({ type: 'status', text: `⏳ ذكاء مونتاجي قرر تنفيذ: ${action}...` });
+              const result = await processVideo(action, videoSource, params);
+              if (result.success && result.outputUrl) {
+                useEditorStore.getState().setVideoSource(result.outputUrl, 'blob');
+                addMessage({ type: 'execution_result', text: result.message, outputUrl: result.outputUrl, action });
+              } else {
+                addMessage({ type: 'error', text: result.message });
+              }
+            }
+          }
+        } else {
+          addMessage({ type: 'ai', text: `✅ ${data.reply || 'تم إرسال الأمر'}`, status: 'processing' });
+        }
       } catch {
         addMessage({ type: 'error', text: '⚠️ فشل الاتصال بالخادم' });
       }
