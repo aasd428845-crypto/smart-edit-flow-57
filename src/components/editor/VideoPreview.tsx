@@ -54,11 +54,14 @@ export const VideoPreview = () => {
       formData.append('file', file);
       formData.append('project_id', pid);
 
-      const res = await supabase.functions.invoke('upload-to-vimeo', { body: formData });
-      if (res.error) throw new Error(res.error.message);
+      const { data, error } = await supabase.functions.invoke('upload-to-vimeo', { body: formData });
+      if (error) {
+        console.error('Vimeo Edge Function Error:', error);
+        throw new Error(error.message || 'فشل استدعاء دالة Vimeo');
+      }
 
-      setVideoUrl(res.data.video_url);
-      setVideoSource(res.data.video_url, 'remote');
+      setVideoUrl(data.video_url);
+      setVideoSource(data.video_url, 'remote');
       addMessage({ type: 'ai', text: '✅ تم رفع الفيديو بنجاح! يمكنك الآن كتابة أمر المونتاج.' });
       toast.success('تم رفع الفيديو بنجاح');
     } catch (err: any) {
@@ -69,8 +72,16 @@ export const VideoPreview = () => {
         const fileName = `${pid}_${Date.now()}_${file.name}`;
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('videos')
-          .upload(fileName, file, { contentType: file.type, upsert: false });
-        if (uploadError) throw uploadError;
+          .upload(fileName, file, { 
+            contentType: file.type, 
+            upsert: false,
+            cacheControl: '3600'
+          });
+        
+        if (uploadError) {
+          console.error('Supabase Storage Error:', uploadError);
+          throw uploadError;
+        }
 
         const { data: publicData } = supabase.storage.from('videos').getPublicUrl(uploadData.path);
         const publicUrl = publicData.publicUrl;
@@ -80,7 +91,8 @@ export const VideoPreview = () => {
         addMessage({ type: 'ai', text: `✅ تم الرفع المباشر بنجاح! يمكنك الآن كتابة أمر المونتاج.\n💡 تم استخدام الرفع المباشر كبديل لـ Vimeo.` });
         toast.success('تم الرفع المباشر بنجاح');
       } catch (storageErr: any) {
-        addMessage({ type: 'error', text: `فشل الرفع المباشر أيضاً: ${storageErr.message}` });
+        console.error('Direct Upload Final Failure:', storageErr);
+        addMessage({ type: 'error', text: `❌ فشل الرفع تماماً: ${storageErr.message || 'خطأ في الشبكة أو التصاريح'}` });
         toast.error('فشل الرفع — الفيديو متاح محلياً فقط');
       }
     } finally {
