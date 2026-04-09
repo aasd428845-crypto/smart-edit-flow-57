@@ -34,13 +34,22 @@ async function getFFmpeg(): Promise<FFmpeg> {
 async function writeInput(ff: FFmpeg, videoSource: string): Promise<string> {
   const inputName = 'input.mp4';
   
-  if (videoSource.startsWith('blob:')) {
-    const res = await fetch(videoSource);
-    const buf = await res.arrayBuffer();
-    await ff.writeFile(inputName, new Uint8Array(buf));
-  } else {
-    const data = await fetchFile(videoSource);
-    await ff.writeFile(inputName, data);
+  try {
+    if (videoSource.startsWith('blob:')) {
+      const res = await fetch(videoSource);
+      const buf = await res.arrayBuffer();
+      await ff.writeFile(inputName, new Uint8Array(buf));
+    } else {
+      // For remote URLs (Supabase/Vimeo), use fetch with cors mode explicitly
+      // fetchFile sometimes fails with CORS on certain environments
+      const response = await fetch(videoSource, { mode: 'cors' });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const arrayBuffer = await response.arrayBuffer();
+      await ff.writeFile(inputName, new Uint8Array(arrayBuffer));
+    }
+  } catch (err: any) {
+    console.error('Error writing input to FFmpeg:', err);
+    throw new Error(`فشل في تحميل الفيديو للمعالجة: ${err.message}. تأكد من إعدادات CORS في Supabase Storage.`);
   }
 
   return inputName;

@@ -182,10 +182,14 @@ export const AIChatPanel = () => {
 
       addMessage({ type: 'ai', text: data.reply || 'تم' });
     } catch (err: any) {
+      console.error('AIChatPanel Error:', err);
       if (err?.name === 'TypeError' && err?.message?.includes('fetch')) {
-        addMessage({ type: 'error', text: '⚠️ فشل الاتصال. تحقق من اتصالك بالإنترنت.' });
+        addMessage({ 
+          type: 'error', 
+          text: '⚠️ فشل الاتصال بالخادم. يرجى التأكد من تفعيل CORS في Supabase Storage (Origin: *).' 
+        });
       } else {
-        addMessage({ type: 'error', text: `⚠️ خطأ: ${err?.message || 'غير معروف'}` });
+        addMessage({ type: 'error', text: `❌ خطأ: ${err.message || 'حدث خطأ غير متوقع'}` });
       }
     } finally {
       setIsLoading(false);
