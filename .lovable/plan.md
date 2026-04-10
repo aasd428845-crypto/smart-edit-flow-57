@@ -1,56 +1,73 @@
 
 
-# خطة: إضافة أدوات ذكاء اصطناعي تعمل بدون سيرفر
+# المرحلة 1: نظام الرفع المتقدم مع TUS Protocol
 
-## الفكرة
-إضافة 3 أدوات جديدة تعمل مباشرة من المتصفح بدون الحاجة للسيرفر الخلفي (FastAPI):
-1. **جلب معلومات Vimeo** — عبر Vimeo oEmbed API (مجاني)
-2. **نسخ الفيديو لنص** — عبر AssemblyAI API
-3. **إزالة خلفية صورة** — عبر Remove.bg API
+## ملخص
+تحويل نظام الرفع الحالي (الذي يرسل الملف كاملاً عبر Edge Function) إلى نظام متقدم يدعم:
+- رفع مباشر من العميل إلى Vimeo عبر TUS (استئناف + ملفات كبيرة)
+- شريط تقدم حقيقي مع سرعة الرفع والوقت المتبقي
+- إيقاف/استئناف/إلغاء
+- Fallback تلقائي إلى Supabase Storage
 
-هذه الأدوات تُضاف بجانب أداة `executeVideoCommand` الحالية، فعندما يطلب المستخدم "معلومات عن فيديو Vimeo" أو "انسخ الفيديو" يتم التنفيذ مباشرة من المتصفح.
-
-## التغييرات
-
-### 1. إنشاء `src/lib/tools.ts`
-ملف يحتوي على الأدوات الثلاث:
-- `tool_get_vimeo_info(video_url)` — يستدعي `vimeo.com/api/oembed.json`
-- `tool_transcribe(video_url)` — يرسل للـ AssemblyAI مع polling حتى الاكتمال
-- `tool_remove_background(image_url)` — يرسل للـ Remove.bg ويعيد base64
-- `toolHandlers` map لربط اسم الأداة بالدالة
-
-**ملاحظة أمنية**: مفاتيح AssemblyAI و Remove.bg ستُخزن كـ secrets في Edge Function بدلاً من `VITE_` env vars لتجنب تسريبها في المتصفح. أداة Vimeo لا تحتاج مفتاح.
-
-### 2. تحديث Edge Function `chat/index.ts`
-- إضافة 3 أدوات جديدة لمصفوفة `tools`:
-  - `get_vimeo_info` (video_url)
-  - `transcribe_video` (video_url)  
-  - `remove_background` (image_url)
-- تحديث System Prompt ليعرف الـ AI متى يستخدم كل أداة
-- عند رد AI بـ tool_call لهذه الأدوات، يُرجعها للواجهة مثل `executeVideoCommand`
-
-### 3. تحديث `AIChatPanel.tsx`
-- استيراد `toolHandlers` من `src/lib/tools.ts`
-- في `handleToolCalls`: إضافة فرع لمعالجة الأدوات الجديدة
-  - إذا كان اسم الأداة في `toolHandlers` → تنفيذها مباشرة في المتصفح
-  - إذا كان `executeVideoCommand` → إرسال للسيرفر كالمعتاد
-- عرض مؤشر "جارٍ التنفيذ..." أثناء العمل
-- عرض النتيجة كرسالة `ai` أو `execution_result`
-
-### 4. إعداد المفاتيح
-- أداة Vimeo: لا تحتاج مفتاح (مجانية)
-- AssemblyAI و Remove.bg: سيتم تنفيذهما عبر edge function proxy جديدة لحماية المفاتيح، أو مباشرة من المتصفح إذا وفّر المستخدم المفاتيح في الإعدادات
+## المعمارية
 
 ```text
-مسار التنفيذ:
-User → "معلومات عن vimeo.com/123" → Edge Function → AI يستدعي get_vimeo_info
-→ يعود للواجهة → تنفيذ مباشر في المتصفح → عرض النتيجة
+Client (tus-js-client)
+  │
+  ├─► Edge Function: create-vimeo-ticket (POST)
+  │     → يطلب upload_link من Vimeo API
+  │     → يرجع {upload_link, video_uri} للعميل
+  │
+  └─► Vimeo TUS endpoint (PATCH مباشر)
+        → العميل يرفع مباشرة بدون وسيط
+        → شريط تقدم حقيقي
+        → استئناف تلقائي عند انقطاع الشبكة
 ```
 
-## الملفات المتأثرة
-| الملف | التعديل |
+## التغييرات المطلوبة
+
+### 1. تثبيت `tus-js-client`
+```
+npm install tus-js-client
+```
+
+### 2. Edge Function جديدة: `create-vimeo-ticket`
+- تستقبل `{ file_size, project_id, file_name }`
+- تطلب upload ticket من Vimeo API (TUS approach)
+- ترجع `{ upload_link, video_uri, video_url }` فقط — بدون رفع الملف
+- أخف وأسرع من الدالة الحالية التي ترفع الملف كاملاً عبر Edge Function
+
+### 3. مكتبة `src/lib/upload-manager.ts` (ملف جديد)
+كلاس `UploadManager` يغلّف `tus-js-client`:
+- `startUpload(file, uploadLink)` — يبدأ الرفع المباشر إلى Vimeo
+- `pause()` / `resume()` / `cancel()`
+- Events: `onProgress(percent, speed, eta)`, `onSuccess()`, `onError()`
+- Retry تلقائي (3 محاولات) مع backoff
+
+### 4. مكوّن `src/components/editor/UploadProgress.tsx` (ملف جديد)
+- شريط تقدم بألوان التطبيق (ذهبي)
+- نسبة مئوية + سرعة الرفع + الوقت المتبقي
+- أزرار: إيقاف مؤقت ⏸️ | استئناف ▶️ | إلغاء ❌
+- رسائل حالة: "جارٍ الرفع..." / "متوقف" / "جارٍ إعادة المحاولة..."
+
+### 5. تحديث `VideoPreview.tsx`
+- استبدال `handleFile` الحالي بالمنطق الجديد:
+  1. إنشاء مشروع في DB
+  2. استدعاء `create-vimeo-ticket` للحصول على `upload_link`
+  3. بدء الرفع المباشر عبر `UploadManager`
+  4. عرض `UploadProgress` أثناء الرفع
+  5. Fallback إلى Supabase Storage عند فشل Vimeo
+
+### 6. تحديث `editorStore.ts`
+- إضافة حالات الرفع: `uploadProgress`, `uploadSpeed`, `uploadEta`, `uploadStatus`
+
+### الملفات المتأثرة
+| الملف | النوع |
 |---|---|
-| `src/lib/tools.ts` | ملف جديد — 3 أدوات |
-| `supabase/functions/chat/index.ts` | إضافة 3 tools جديدة للـ AI |
-| `src/components/editor/AIChatPanel.tsx` | معالجة الأدوات الجديدة client-side |
+| `supabase/functions/create-vimeo-ticket/index.ts` | جديد |
+| `src/lib/upload-manager.ts` | جديد |
+| `src/components/editor/UploadProgress.tsx` | جديد |
+| `src/components/editor/VideoPreview.tsx` | تعديل |
+| `src/store/editorStore.ts` | تعديل |
+| `package.json` | إضافة tus-js-client |
 
