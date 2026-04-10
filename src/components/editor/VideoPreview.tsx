@@ -216,6 +216,7 @@ export const VideoPreview = () => {
     toast.success('✅ تم استيراد الفيديو من Vimeo');
   };
 
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files[0];
