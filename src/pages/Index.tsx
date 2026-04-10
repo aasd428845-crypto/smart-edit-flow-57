@@ -4,17 +4,41 @@ import { VideoPreview } from '@/components/editor/VideoPreview';
 import { AIChatPanel } from '@/components/editor/AIChatPanel';
 import { Timeline } from '@/components/editor/Timeline';
 import { TemplateGallery } from '@/components/editor/TemplateGallery';
+import { PreviewPanel } from '@/components/editor/PreviewPanel';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useEditorStore } from '@/store/editorStore';
 import { MessageSquare, Film, LayoutGrid } from 'lucide-react';
+import { toast } from 'sonner';
 
 type MobileTab = 'chat' | 'video' | 'templates';
 
 const Index = () => {
   const isMobile = useIsMobile();
   const [mobileTab, setMobileTab] = useState<MobileTab>('chat');
+  const { showPreview, previewUrl, fullQualityUrl, setShowPreview, setPreviewUrl, addMessage } = useEditorStore();
+
+  const handleApprove = () => {
+    toast.success('✅ تمت الموافقة — يمكنك الآن التصدير');
+    addMessage({ type: 'ai', text: '✅ تمت الموافقة على المعاينة! استخدم أزرار التحميل أو الرفع للتصدير.' });
+  };
+
+  const handleReject = () => {
+    setShowPreview(false);
+    setPreviewUrl(null);
+    toast.info('🔄 يمكنك طلب تعديلات إضافية من الدردشة');
+    addMessage({ type: 'ai', text: '🔄 تم رفض المعاينة. اكتب التعديلات المطلوبة وسأنفذها فوراً!' });
+  };
+
+  const handleClosePreview = () => {
+    setShowPreview(false);
+  };
 
   if (isMobile) {
     return (
+      <>
+      {showPreview && previewUrl && fullQualityUrl && (
+        <PreviewPanel previewUrl={previewUrl} fullQualityUrl={fullQualityUrl} onApprove={handleApprove} onReject={handleReject} onClose={handleClosePreview} />
+      )}
       <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
         {/* Compact toolbar */}
         <TopToolbar />
