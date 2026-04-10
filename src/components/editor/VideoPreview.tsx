@@ -172,7 +172,50 @@ export const VideoPreview = () => {
     addMessage({ type: 'ai', text: `✅ تم ربط الفيديو: ${urlInput}` });
   };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleVimeoFetch = async () => {
+    const url = vimeoInput.trim();
+    if (!url) return;
+    if (!url.match(/vimeo\.com\/\d+/)) {
+      toast.error('الرابط غير صالح — يجب أن يكون رابط Vimeo صحيح');
+      return;
+    }
+    setVimeoLoading(true);
+    setVimeoMeta(null);
+    try {
+      const res = await fetch(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url)}`);
+      if (!res.ok) throw new Error('فشل جلب البيانات');
+      const data = await res.json();
+      const meta: VimeoMeta = {
+        title: data.title,
+        author: data.author_name,
+        duration: data.duration,
+        width: data.width,
+        height: data.height,
+        thumbnail: data.thumbnail_url,
+        description: data.description || '',
+      };
+      setVimeoMeta(meta);
+      toast.success('✅ تم جلب بيانات الفيديو');
+    } catch (err: any) {
+      toast.error('فشل جلب بيانات Vimeo — تأكد من الرابط');
+    } finally {
+      setVimeoLoading(false);
+    }
+  };
+
+  const handleVimeoImport = async () => {
+    if (!vimeoInput.trim()) return;
+    setVideoSource(vimeoInput, 'remote');
+    setVideoUrl(vimeoInput);
+    const pid = await createProject();
+    if (!pid) return;
+    const metaText = vimeoMeta
+      ? `📹 **${vimeoMeta.title}**\n👤 ${vimeoMeta.author}\n⏱️ ${Math.floor(vimeoMeta.duration / 60)}:${(vimeoMeta.duration % 60).toString().padStart(2, '0')}\n📐 ${vimeoMeta.width}×${vimeoMeta.height}`
+      : '';
+    addMessage({ type: 'ai', text: `✅ تم استيراد فيديو من Vimeo!\n${metaText}\n\nيمكنك الآن كتابة أمر المونتاج.` });
+    toast.success('✅ تم استيراد الفيديو من Vimeo');
+  };
+
     e.preventDefault();
     setIsDragOver(false);
     const file = e.dataTransfer.files[0];
