@@ -3,8 +3,12 @@ import { Upload, Film, Play, Pause, Volume2, Maximize, FolderOpen, Link } from '
 import { useEditorStore } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { UploadManager } from '@/lib/upload-manager';
+import { UploadProgress } from './UploadProgress';
 
 type SourceTab = 'upload' | 'local' | 'url';
+
+let uploadManagerInstance: UploadManager | null = null;
 
 export const VideoPreview = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -12,6 +16,7 @@ export const VideoPreview = () => {
     videoUrl, setVideoFile, setVideoUrl, setVideoDuration, setVideoSource,
     currentTime, setCurrentTime, isPlaying, setIsPlaying,
     setProjectId, isUploading, setIsUploading, addMessage, videoDuration,
+    setUploadProgress, setUploadSpeed, setUploadEta, setUploadStatus, uploadStatus,
   } = useEditorStore();
 
   const [isDragOver, setIsDragOver] = useState(false);
@@ -33,11 +38,37 @@ export const VideoPreview = () => {
     return data.id;
   };
 
+  const fallbackToStorage = async (file: File, pid: string) => {
+    addMessage({ type: 'status', text: '⚠️ فشل Vimeo. جارٍ الرفع المباشر...' });
+    toast.warning('فشل Vimeo — جارٍ الرفع المباشر');
+    try {
+      const fileName = `${pid}_${Date.now()}_${file.name}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('videos')
+        .upload(fileName, file, { contentType: file.type, upsert: false, cacheControl: '3600' });
+      if (uploadError) throw uploadError;
+
+      const { data: publicData } = supabase.storage.from('videos').getPublicUrl(uploadData.path);
+      setVideoUrl(publicData.publicUrl);
+      setVideoSource(publicData.publicUrl, 'remote');
+      setUploadStatus('completed');
+      addMessage({ type: 'ai', text: '✅ تم الرفع المباشر بنجاح!' });
+      toast.success('تم الرفع المباشر بنجاح');
+    } catch (err: any) {
+      setUploadStatus('failed');
+      addMessage({ type: 'error', text: `❌ فشل الرفع: ${err.message}` });
+      toast.error('فشل الرفع');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('video/')) {
       toast.error('الملف يجب أن يكون فيديو (mp4, mov)');
       return;
     }
+
     setVideoFile(file);
     const localUrl = URL.createObjectURL(file);
     setVideoUrl(localUrl);
@@ -47,65 +78,75 @@ export const VideoPreview = () => {
     if (!pid) return;
 
     setIsUploading(true);
-    addMessage({ type: 'status', text: '⬆️ جارٍ رفع الفيديو إلى Vimeo...' });
+    setUploadProgress(0);
+    setUploadSpeed(0);
+    setUploadEta(0);
+    setUploadStatus('uploading');
+    addMessage({ type: 'status', text: '⬆️ جارٍ تجهيز الرفع عبر TUS...' });
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('project_id', pid);
+      // Step 1: Get upload ticket from Vimeo via edge function
+      const { data, error } = await supabase.functions.invoke('create-vimeo-ticket', {
+        body: { file_size: file.size, project_id: pid, file_name: file.name },
+      });
 
-      const { data, error } = await supabase.functions.invoke('upload-to-vimeo', { body: formData });
-      if (error) {
-        console.error('Vimeo Edge Function Error:', error);
-        throw new Error(error.message || 'فشل استدعاء دالة Vimeo');
+      if (error || !data?.upload_link) {
+        throw new Error(error?.message || 'لم يتم الحصول على رابط الرفع');
       }
 
-      setVideoUrl(data.video_url);
-      setVideoSource(data.video_url, 'remote');
-      addMessage({ type: 'ai', text: '✅ تم رفع الفيديو بنجاح! يمكنك الآن كتابة أمر المونتاج.' });
-      toast.success('تم رفع الفيديو بنجاح');
+      // Step 2: Start TUS upload directly to Vimeo
+      const manager = new UploadManager(
+        {
+          onProgress: (p) => {
+            setUploadProgress(p.percent);
+            setUploadSpeed(p.speed);
+            setUploadEta(p.eta);
+          },
+          onSuccess: (videoUrl) => {
+            setVideoUrl(videoUrl);
+            setVideoSource(videoUrl, 'remote');
+            setIsUploading(false);
+            setUploadStatus('completed');
+            addMessage({ type: 'ai', text: '✅ تم رفع الفيديو بنجاح عبر TUS! يمكنك الآن كتابة أمر المونتاج.' });
+            toast.success('تم رفع الفيديو بنجاح');
+            uploadManagerInstance = null;
+          },
+          onError: (err) => {
+            console.error('TUS upload failed:', err);
+            fallbackToStorage(file, pid);
+            uploadManagerInstance = null;
+          },
+          onStatusChange: (s) => {
+            setUploadStatus(s);
+          },
+        },
+        data.video_url
+      );
+
+      uploadManagerInstance = manager;
+      manager.startUpload(file, data.upload_link);
     } catch (err: any) {
-      // Fallback: Upload to Supabase Storage
-      addMessage({ type: 'status', text: '⚠️ فشل Vimeo. جارٍ الرفع المباشر...' });
-      toast.warning('فشل Vimeo — جارٍ الرفع المباشر');
-      try {
-        const fileName = `${pid}_${Date.now()}_${file.name}`;
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from('videos')
-          .upload(fileName, file, { 
-            contentType: file.type, 
-            upsert: false,
-            cacheControl: '3600'
-          });
-        
-        if (uploadError) {
-          console.error('Supabase Storage Error:', uploadError);
-          throw uploadError;
-        }
-
-        const { data: publicData } = supabase.storage.from('videos').getPublicUrl(uploadData.path);
-        const publicUrl = publicData.publicUrl;
-
-        setVideoUrl(publicUrl);
-        setVideoSource(publicUrl, 'remote');
-        addMessage({ type: 'ai', text: `✅ تم الرفع المباشر بنجاح! يمكنك الآن كتابة أمر المونتاج.\n💡 تم استخدام الرفع المباشر كبديل لـ Vimeo.` });
-        toast.success('تم الرفع المباشر بنجاح');
-      } catch (storageErr: any) {
-        console.error('Direct Upload Final Failure:', storageErr);
-        addMessage({ type: 'error', text: `❌ فشل الرفع تماماً: ${storageErr.message || 'خطأ في الشبكة أو التصاريح'}` });
-        toast.error('فشل الرفع — الفيديو متاح محلياً فقط');
-      }
-    } finally {
-      setIsUploading(false);
+      console.error('Vimeo ticket error:', err);
+      await fallbackToStorage(file, pid);
     }
   }, []);
 
+  const handlePause = () => uploadManagerInstance?.pause();
+  const handleResume = () => uploadManagerInstance?.resume();
+  const handleCancel = () => {
+    uploadManagerInstance?.cancel();
+    uploadManagerInstance = null;
+    setIsUploading(false);
+    setUploadStatus('cancelled');
+    setUploadProgress(0);
+    toast.info('تم إلغاء الرفع');
+  };
+
   const handleLocalPath = async () => {
     if (!localPath.trim()) return;
-    // Local path check not available in cloud mode — treat as direct source
     setVideoSource(localPath, 'local');
     await createProject();
-    toast.success(`✅ تم تسجيل المسار المحلي. جاهز للمعالجة!`);
+    toast.success('✅ تم تسجيل المسار المحلي');
     addMessage({ type: 'ai', text: `✅ ملف محلي مسجّل: ${localPath}` });
   };
 
@@ -139,6 +180,7 @@ export const VideoPreview = () => {
   };
 
   const showUploadZone = !videoUrl || videoUrl.startsWith('https://vimeo.com');
+  const showProgress = isUploading || (uploadStatus !== 'idle' && uploadStatus !== 'completed');
 
   if (showUploadZone) {
     const tabs: { id: SourceTab; label: string; icon: React.ReactNode }[] = [
@@ -158,7 +200,6 @@ export const VideoPreview = () => {
         <p className="text-foreground text-lg mb-1 font-bold">ارفع فيديو لبدء المونتاج</p>
         <p className="text-muted-foreground text-sm mb-5">اسحب وأفلت أو اختر مصدراً</p>
 
-        {/* Source tabs */}
         <div className="flex gap-2 mb-4">
           {tabs.map(t => (
             <button
@@ -174,7 +215,7 @@ export const VideoPreview = () => {
           ))}
         </div>
 
-        {sourceTab === 'upload' && (
+        {sourceTab === 'upload' && !showProgress && (
           <label className="px-6 py-2.5 rounded-lg gold-gradient text-primary-foreground font-bold cursor-pointer hover:opacity-90 transition-all">
             <Upload size={16} className="inline ml-2" />
             ارفع فيديو
@@ -184,35 +225,20 @@ export const VideoPreview = () => {
 
         {sourceTab === 'local' && (
           <div className="flex gap-2 w-80">
-            <input
-              value={localPath}
-              onChange={e => setLocalPath(e.target.value)}
-              placeholder="/path/to/video.mp4"
-              className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring text-left dir-ltr"
-              dir="ltr"
-            />
+            <input value={localPath} onChange={e => setLocalPath(e.target.value)} placeholder="/path/to/video.mp4" className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring text-left dir-ltr" dir="ltr" />
             <button onClick={handleLocalPath} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm">تحقق</button>
           </div>
         )}
 
         {sourceTab === 'url' && (
           <div className="flex gap-2 w-80">
-            <input
-              value={urlInput}
-              onChange={e => setUrlInput(e.target.value)}
-              placeholder="https://example.com/video.mp4"
-              className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring text-left"
-              dir="ltr"
-            />
+            <input value={urlInput} onChange={e => setUrlInput(e.target.value)} placeholder="https://example.com/video.mp4" className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring text-left" dir="ltr" />
             <button onClick={handleUrlSubmit} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm">تحميل</button>
           </div>
         )}
 
-        {isUploading && (
-          <div className="mt-6 flex items-center gap-2 text-primary">
-            <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            <span>جارٍ الرفع...</span>
-          </div>
+        {showProgress && (
+          <UploadProgress onPause={handlePause} onResume={handleResume} onCancel={handleCancel} />
         )}
       </div>
     );
@@ -238,26 +264,20 @@ export const VideoPreview = () => {
           {isPlaying ? <Pause size={20} /> : <Play size={20} />}
         </button>
         <span className="text-foreground text-xs font-mono">{formatTime(currentTime)} / {formatTime(videoDuration)}</span>
-        <input
-          type="range"
-          min={0}
-          max={videoDuration || 100}
-          value={currentTime}
-          onChange={(e) => {
-            const t = parseFloat(e.target.value);
-            setCurrentTime(t);
-            if (videoRef.current) videoRef.current.currentTime = t;
-          }}
-          className="flex-1 h-1 accent-primary"
-        />
+        <input type="range" min={0} max={videoDuration || 100} value={currentTime} onChange={(e) => { const t = parseFloat(e.target.value); setCurrentTime(t); if (videoRef.current) videoRef.current.currentTime = t; }} className="flex-1 h-1 accent-primary" />
         <button className="text-foreground hover:text-primary transition-colors"><Volume2 size={16} /></button>
         <button onClick={() => videoRef.current?.requestFullscreen()} className="text-foreground hover:text-primary transition-colors"><Maximize size={16} /></button>
       </div>
 
-      {/* Video info */}
       <div className="absolute top-3 right-3 z-10 bg-card/80 backdrop-blur px-3 py-1 rounded text-xs text-muted-foreground">
         ⏱️ المدة: {formatTime(videoDuration)}
       </div>
+
+      {showProgress && (
+        <div className="absolute bottom-16 left-4 right-4 z-10">
+          <UploadProgress onPause={handlePause} onResume={handleResume} onCancel={handleCancel} />
+        </div>
+      )}
     </div>
   );
 };
