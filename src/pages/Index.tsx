@@ -81,27 +81,33 @@ const Index = () => {
           ))}
         </div>
       </div>
+      </>
     );
   }
 
   return (
-    <div className="h-screen grid grid-rows-[56px_1fr_120px_180px] grid-cols-[1fr_380px] bg-background overflow-hidden">
-      <div className="col-span-2">
-        <TopToolbar />
+    <>
+      {showPreview && previewUrl && fullQualityUrl && (
+        <PreviewPanel previewUrl={previewUrl} fullQualityUrl={fullQualityUrl} onApprove={handleApprove} onReject={handleReject} onClose={handleClosePreview} />
+      )}
+      <div className="h-screen grid grid-rows-[56px_1fr_120px_180px] grid-cols-[1fr_380px] bg-background overflow-hidden">
+        <div className="col-span-2">
+          <TopToolbar />
+        </div>
+        <div className="overflow-hidden">
+          <VideoPreview />
+        </div>
+        <div className="row-span-2 overflow-hidden">
+          <AIChatPanel />
+        </div>
+        <div>
+          <Timeline />
+        </div>
+        <div className="col-span-2">
+          <TemplateGallery />
+        </div>
       </div>
-      <div className="overflow-hidden">
-        <VideoPreview />
-      </div>
-      <div className="row-span-2 overflow-hidden">
-        <AIChatPanel />
-      </div>
-      <div>
-        <Timeline />
-      </div>
-      <div className="col-span-2">
-        <TemplateGallery />
-      </div>
-    </div>
+    </>
   );
 };
 
