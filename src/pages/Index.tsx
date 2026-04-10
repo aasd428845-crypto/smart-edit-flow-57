@@ -39,12 +39,12 @@ const Index = () => {
       {showPreview && previewUrl && fullQualityUrl && (
         <PreviewPanel previewUrl={previewUrl} fullQualityUrl={fullQualityUrl} onApprove={handleApprove} onReject={handleReject} onClose={handleClosePreview} />
       )}
-      <div className="h-[100dvh] flex flex-col bg-background overflow-hidden">
+      <div className="h-[100dvh] flex flex-col bg-background overflow-hidden no-select safe-area-top">
         {/* Compact toolbar */}
         <TopToolbar />
 
         {/* Main content */}
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-hidden touch-scroll">
           {mobileTab === 'chat' && <AIChatPanel />}
           {mobileTab === 'video' && (
             <div className="flex flex-col h-full">
@@ -55,7 +55,7 @@ const Index = () => {
             </div>
           )}
           {mobileTab === 'templates' && (
-            <div className="h-full overflow-y-auto">
+            <div className="h-full overflow-y-auto touch-scroll">
               <TemplateGallery />
             </div>
           )}
