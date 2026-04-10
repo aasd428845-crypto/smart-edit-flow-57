@@ -46,6 +46,12 @@ interface EditorState {
   uploadSpeed: number;
   uploadEta: number;
   uploadStatus: UploadStatusType;
+  // Preview state
+  previewUrl: string | null;
+  fullQualityUrl: string | null;
+  previewGenerating: boolean;
+  previewProgress: number;
+  showPreview: boolean;
   selectedAgent: string;
 
   setVideoUrl: (url: string | null) => void;
@@ -65,6 +71,11 @@ interface EditorState {
   setUploadSpeed: (s: number) => void;
   setUploadEta: (e: number) => void;
   setUploadStatus: (s: UploadStatusType) => void;
+  setPreviewUrl: (u: string | null) => void;
+  setFullQualityUrl: (u: string | null) => void;
+  setPreviewGenerating: (g: boolean) => void;
+  setPreviewProgress: (p: number) => void;
+  setShowPreview: (s: boolean) => void;
   setSelectedAgent: (a: string) => void;
   addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   clearMessages: () => void;
@@ -109,6 +120,11 @@ export const useEditorStore = create<EditorState>((set) => ({
   uploadSpeed: 0,
   uploadEta: 0,
   uploadStatus: 'idle' as UploadStatusType,
+  previewUrl: null,
+  fullQualityUrl: null,
+  previewGenerating: false,
+  previewProgress: 0,
+  showPreview: false,
 
   setVideoUrl: (url) => set({ videoUrl: url }),
   setVideoFile: (file) => set({ videoFile: file }),
@@ -127,6 +143,11 @@ export const useEditorStore = create<EditorState>((set) => ({
   setUploadSpeed: (s) => set({ uploadSpeed: s }),
   setUploadEta: (e) => set({ uploadEta: e }),
   setUploadStatus: (s) => set({ uploadStatus: s }),
+  setPreviewUrl: (u) => set({ previewUrl: u }),
+  setFullQualityUrl: (u) => set({ fullQualityUrl: u }),
+  setPreviewGenerating: (g) => set({ previewGenerating: g }),
+  setPreviewProgress: (p) => set({ previewProgress: p }),
+  setShowPreview: (s) => set({ showPreview: s }),
   setSelectedAgent: (a) => set({ selectedAgent: a }),
   addMessage: (m) =>
     set((state) => ({
