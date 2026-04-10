@@ -57,7 +57,7 @@ export async function downloadVideo(videoUrl: string, callbacks: ExportCallbacks
       }
     }
 
-    const blob = new Blob(chunks, { type: 'video/mp4' });
+    const blob = new Blob(chunks as BlobPart[], { type: 'video/mp4' });
     triggerDownload(blob);
     callbacks.onProgress(100);
     callbacks.onStatusChange('completed');
