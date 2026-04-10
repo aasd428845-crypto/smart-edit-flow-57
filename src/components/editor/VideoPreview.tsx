@@ -33,6 +33,9 @@ export const VideoPreview = () => {
   const [sourceTab, setSourceTab] = useState<SourceTab>('upload');
   const [localPath, setLocalPath] = useState('');
   const [urlInput, setUrlInput] = useState('');
+  const [vimeoInput, setVimeoInput] = useState('');
+  const [vimeoMeta, setVimeoMeta] = useState<VimeoMeta | null>(null);
+  const [vimeoLoading, setVimeoLoading] = useState(false);
 
   const createProject = async () => {
     const { data, error } = await supabase
