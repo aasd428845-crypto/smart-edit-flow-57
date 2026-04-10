@@ -120,6 +120,11 @@ export const useEditorStore = create<EditorState>((set) => ({
   uploadSpeed: 0,
   uploadEta: 0,
   uploadStatus: 'idle' as UploadStatusType,
+  previewUrl: null,
+  fullQualityUrl: null,
+  previewGenerating: false,
+  previewProgress: 0,
+  showPreview: false,
 
   setVideoUrl: (url) => set({ videoUrl: url }),
   setVideoFile: (file) => set({ videoFile: file }),
@@ -138,6 +143,11 @@ export const useEditorStore = create<EditorState>((set) => ({
   setUploadSpeed: (s) => set({ uploadSpeed: s }),
   setUploadEta: (e) => set({ uploadEta: e }),
   setUploadStatus: (s) => set({ uploadStatus: s }),
+  setPreviewUrl: (u) => set({ previewUrl: u }),
+  setFullQualityUrl: (u) => set({ fullQualityUrl: u }),
+  setPreviewGenerating: (g) => set({ previewGenerating: g }),
+  setPreviewProgress: (p) => set({ previewProgress: p }),
+  setShowPreview: (s) => set({ showPreview: s }),
   setSelectedAgent: (a) => set({ selectedAgent: a }),
   addMessage: (m) =>
     set((state) => ({
