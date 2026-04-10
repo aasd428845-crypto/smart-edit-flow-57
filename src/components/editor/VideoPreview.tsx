@@ -1,12 +1,22 @@
 import { useRef, useState, useCallback } from 'react';
-import { Upload, Film, Play, Pause, Volume2, Maximize, FolderOpen, Link } from 'lucide-react';
+import { Upload, Film, Play, Pause, Volume2, Maximize, FolderOpen, Link, Video, Loader2 } from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { UploadManager } from '@/lib/upload-manager';
 import { UploadProgress } from './UploadProgress';
 
-type SourceTab = 'upload' | 'local' | 'url';
+type SourceTab = 'upload' | 'local' | 'url' | 'vimeo';
+
+interface VimeoMeta {
+  title: string;
+  author: string;
+  duration: number;
+  width: number;
+  height: number;
+  thumbnail: string;
+  description: string;
+}
 
 let uploadManagerInstance: UploadManager | null = null;
 
