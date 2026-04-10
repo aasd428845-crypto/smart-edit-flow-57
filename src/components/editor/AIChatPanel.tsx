@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { MessageBubble } from './MessageBubble';
 import { toolHandlers } from '@/lib/tools';
 import { processVideo, type FFmpegAction } from '@/lib/ffmpeg-processor';
+import { generatePreview } from '@/lib/preview-generator';
 
 const aiAgents = [
   { id: 'claude', label: 'Claude', icon: '🟣' },
@@ -32,6 +33,7 @@ export const AIChatPanel = () => {
     messages, addMessage, projectId, videoSource, sourceType,
     currentTime, selectedTemplate, contentType, setProjectStatus,
     cinematicMode, selectedAgent, setSelectedAgent, setVideoSource,
+    setPreviewUrl, setFullQualityUrl, setPreviewGenerating, setPreviewProgress, setShowPreview,
   } = useEditorStore();
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -94,15 +96,36 @@ export const AIChatPanel = () => {
 
     const result = await processVideo(action as FFmpegAction, videoSource, params);
 
-    if (result.success) {
-      addMessage({
-        type: 'execution_result',
-        text: result.message,
-        outputUrl: result.outputUrl,
-        action,
-      });
-      if (result.outputUrl) {
-        setVideoSource(result.outputUrl, 'blob');
+    if (result.success && result.outputUrl) {
+      // Store full quality URL
+      setFullQualityUrl(result.outputUrl);
+      setVideoSource(result.outputUrl, 'blob');
+
+      addMessage({ type: 'status', text: '🔄 جارٍ إنشاء معاينة سريعة...' });
+      setPreviewGenerating(true);
+      setPreviewProgress(0);
+
+      const preview = await generatePreview(result.outputUrl, (p) => setPreviewProgress(p));
+      setPreviewGenerating(false);
+
+      if (preview.success) {
+        setPreviewUrl(preview.previewUrl);
+        setShowPreview(true);
+        addMessage({
+          type: 'execution_result',
+          text: `${result.message}\n\n👁️ تم إنشاء معاينة — راجع النتيجة قبل التصدير.`,
+          outputUrl: result.outputUrl,
+          action,
+        });
+        toast.success(`✅ ${action} — المعاينة جاهزة!`);
+      } else {
+        // Fallback: show full quality directly
+        addMessage({
+          type: 'execution_result',
+          text: result.message,
+          outputUrl: result.outputUrl,
+          action,
+        });
         toast.success(`✅ ${action} - تم!`);
       }
     } else {
