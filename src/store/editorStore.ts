@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+export type UploadStatusType = 'idle' | 'uploading' | 'paused' | 'retrying' | 'completed' | 'failed' | 'cancelled';
+
 export interface ChatMessage {
   id: string;
   type: 'user' | 'ai' | 'status' | 'error' | 'execution_result' | 'clarification';
@@ -40,6 +42,10 @@ interface EditorState {
   messages: ChatMessage[];
   isProcessing: boolean;
   isUploading: boolean;
+  uploadProgress: number;
+  uploadSpeed: number;
+  uploadEta: number;
+  uploadStatus: UploadStatusType;
   selectedAgent: string;
 
   setVideoUrl: (url: string | null) => void;
@@ -55,6 +61,10 @@ interface EditorState {
   setCinematicMode: (c: boolean) => void;
   setIsProcessing: (p: boolean) => void;
   setIsUploading: (u: boolean) => void;
+  setUploadProgress: (p: number) => void;
+  setUploadSpeed: (s: number) => void;
+  setUploadEta: (e: number) => void;
+  setUploadStatus: (s: UploadStatusType) => void;
   setSelectedAgent: (a: string) => void;
   addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   clearMessages: () => void;
@@ -95,6 +105,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   ],
   isProcessing: false,
   isUploading: false,
+  uploadProgress: 0,
+  uploadSpeed: 0,
+  uploadEta: 0,
+  uploadStatus: 'idle' as UploadStatusType,
 
   setVideoUrl: (url) => set({ videoUrl: url }),
   setVideoFile: (file) => set({ videoFile: file }),
@@ -109,6 +123,10 @@ export const useEditorStore = create<EditorState>((set) => ({
   setCinematicMode: (c) => set({ cinematicMode: c }),
   setIsProcessing: (p) => set({ isProcessing: p }),
   setIsUploading: (u) => set({ isUploading: u }),
+  setUploadProgress: (p) => set({ uploadProgress: p }),
+  setUploadSpeed: (s) => set({ uploadSpeed: s }),
+  setUploadEta: (e) => set({ uploadEta: e }),
+  setUploadStatus: (s) => set({ uploadStatus: s }),
   setSelectedAgent: (a) => set({ selectedAgent: a }),
   addMessage: (m) =>
     set((state) => ({
