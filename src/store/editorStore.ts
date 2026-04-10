@@ -46,6 +46,12 @@ interface EditorState {
   uploadSpeed: number;
   uploadEta: number;
   uploadStatus: UploadStatusType;
+  // Preview state
+  previewUrl: string | null;
+  fullQualityUrl: string | null;
+  previewGenerating: boolean;
+  previewProgress: number;
+  showPreview: boolean;
   selectedAgent: string;
 
   setVideoUrl: (url: string | null) => void;
@@ -65,6 +71,11 @@ interface EditorState {
   setUploadSpeed: (s: number) => void;
   setUploadEta: (e: number) => void;
   setUploadStatus: (s: UploadStatusType) => void;
+  setPreviewUrl: (u: string | null) => void;
+  setFullQualityUrl: (u: string | null) => void;
+  setPreviewGenerating: (g: boolean) => void;
+  setPreviewProgress: (p: number) => void;
+  setShowPreview: (s: boolean) => void;
   setSelectedAgent: (a: string) => void;
   addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
   clearMessages: () => void;
