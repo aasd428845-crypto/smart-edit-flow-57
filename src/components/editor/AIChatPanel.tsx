@@ -5,8 +5,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { MessageBubble } from './MessageBubble';
 import { toolHandlers } from '@/lib/tools';
-import { processVideo, type FFmpegAction } from '@/lib/ffmpeg-processor';
-import { generatePreview } from '@/lib/preview-generator';
+import { type FFmpegAction } from '@/lib/ffmpeg-processor';
+import { executeJob } from '@/lib/processing-service';
 
 const aiAgents = [
   { id: 'claude', label: 'Claude', icon: '🟣' },
@@ -79,7 +79,7 @@ export const AIChatPanel = () => {
     toast.success('▶️ تم تحميل الفيديو في المشغل');
   };
 
-  // Execute video command locally using FFmpeg.wasm
+  // Execute video command locally using processing service
   const executeLocalVideoCommand = async (action: string, params: Record<string, any> = {}) => {
     if (!videoSource) {
       addMessage({ type: 'error', text: '⚠️ لا يوجد فيديو نشط. يرجى رفع فيديو أولاً.' });
@@ -92,45 +92,24 @@ export const AIChatPanel = () => {
       return;
     }
 
-    addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ "${action}" محلياً في المتصفح...` });
-
-    const result = await processVideo(action as FFmpegAction, videoSource, params);
-
-    if (result.success && result.outputUrl) {
-      // Store full quality URL
-      setFullQualityUrl(result.outputUrl);
-      setVideoSource(result.outputUrl, 'blob');
-
-      addMessage({ type: 'status', text: '🔄 جارٍ إنشاء معاينة سريعة...' });
-      setPreviewGenerating(true);
-      setPreviewProgress(0);
-
-      const preview = await generatePreview(result.outputUrl, (p) => setPreviewProgress(p));
-      setPreviewGenerating(false);
-
-      if (preview.success) {
-        setPreviewUrl(preview.previewUrl);
-        setShowPreview(true);
-        addMessage({
-          type: 'execution_result',
-          text: `${result.message}\n\n👁️ تم إنشاء معاينة — راجع النتيجة قبل التصدير.`,
-          outputUrl: result.outputUrl,
-          action,
-        });
-        toast.success(`✅ ${action} — المعاينة جاهزة!`);
-      } else {
-        // Fallback: show full quality directly
-        addMessage({
-          type: 'execution_result',
-          text: result.message,
-          outputUrl: result.outputUrl,
-          action,
-        });
-        toast.success(`✅ ${action} - تم!`);
-      }
-    } else {
-      addMessage({ type: 'error', text: result.message });
-    }
+    const job = await executeJob(action as FFmpegAction, videoSource, params, {
+      onStatusChange: (j) => {
+        if (j.fullQualityUrl) {
+          setFullQualityUrl(j.fullQualityUrl);
+          setVideoSource(j.fullQualityUrl, 'blob');
+        }
+        if (j.previewUrl) {
+          setPreviewUrl(j.previewUrl);
+          setShowPreview(true);
+          toast.success(`✅ ${action} — المعاينة جاهزة!`);
+        }
+        setPreviewGenerating(j.status === 'generating_preview');
+        setPreviewProgress(j.progress);
+      },
+      onMessage: (type, text, extra) => {
+        addMessage({ type, text, ...(extra || {}) } as any);
+      },
+    });
   };
 
   // Handle tool calls from Cloud AI

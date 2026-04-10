@@ -1,9 +1,8 @@
 import { useRef, useState } from 'react';
-import { Play, Pause, Download, Upload, Check, RotateCcw, Maximize, X } from 'lucide-react';
+import { Play, Pause, Download, Upload, Check, RotateCcw, Maximize, X, Loader2, ExternalLink } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { useEditorStore } from '@/store/editorStore';
-import { UploadManager } from '@/lib/upload-manager';
-import { supabase } from '@/integrations/supabase/client';
+import { downloadVideo, uploadToVimeo, type ExportStatus } from '@/lib/export-service';
 import { toast } from 'sonner';
 
 interface PreviewPanelProps {
@@ -19,8 +18,9 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [exportMode, setExportMode] = useState<'idle' | 'downloading' | 'uploading' | 'done'>('idle');
+  const [exportStatus, setExportStatus] = useState<ExportStatus>('idle');
   const [exportProgress, setExportProgress] = useState(0);
+  const [vimeoLink, setVimeoLink] = useState<string | null>(null);
   const { projectId, addMessage } = useEditorStore();
 
   const togglePlay = () => {
@@ -36,76 +36,50 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
     return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const handleDownload = async () => {
-    setExportMode('downloading');
-    setExportProgress(0);
-    try {
-      const res = await fetch(fullQualityUrl);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `montaji_export_${Date.now()}.mp4`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      setExportProgress(100);
-      setExportMode('done');
-      toast.success('✅ تم تحميل الفيديو بنجاح');
-      addMessage({ type: 'ai', text: '✅ تم تحميل الفيديو إلى جهازك بنجاح!' });
-    } catch (err: any) {
-      toast.error('فشل التحميل');
-      setExportMode('idle');
-    }
+  const isExporting = exportStatus === 'downloading' || exportStatus === 'uploading' || exportStatus === 'preparing';
+
+  const handleDownload = () => {
+    downloadVideo(fullQualityUrl, {
+      onProgress: setExportProgress,
+      onStatusChange: setExportStatus,
+      onSuccess: () => {
+        toast.success('✅ تم تحميل الفيديو بنجاح');
+        addMessage({ type: 'ai', text: '✅ تم تحميل الفيديو إلى جهازك بنجاح!' });
+      },
+      onError: (err) => {
+        toast.error(err);
+        addMessage({ type: 'error', text: err });
+      },
+    });
   };
 
-  const handleUploadToVimeo = async () => {
-    setExportMode('uploading');
-    setExportProgress(0);
+  const handleUploadToVimeo = () => {
+    uploadToVimeo(fullQualityUrl, projectId, {
+      onProgress: setExportProgress,
+      onStatusChange: setExportStatus,
+      onSuccess: ({ url }) => {
+        setVimeoLink(url || null);
+        toast.success('✅ تم الرفع إلى Vimeo بنجاح!');
+        addMessage({ type: 'ai', text: `✅ تم رفع الفيديو إلى Vimeo!\n🔗 الرابط: ${url}` });
+      },
+      onError: (err) => {
+        toast.error(err);
+        addMessage({ type: 'error', text: err });
+      },
+    });
+  };
 
-    try {
-      // Fetch the full quality video as a File
-      const res = await fetch(fullQualityUrl);
-      const blob = await res.blob();
-      const file = new File([blob], `montaji_${Date.now()}.mp4`, { type: 'video/mp4' });
-
-      // Get TUS ticket from Vimeo
-      const { data, error } = await supabase.functions.invoke('create-vimeo-ticket', {
-        body: { file_size: file.size, project_id: projectId || 'export', file_name: file.name },
-      });
-
-      if (error || !data?.upload_link) {
-        throw new Error('فشل الحصول على رابط الرفع من Vimeo');
-      }
-
-      const manager = new UploadManager(
-        {
-          onProgress: (p) => setExportProgress(p.percent),
-          onSuccess: (videoUrl) => {
-            setExportMode('done');
-            setExportProgress(100);
-            toast.success('✅ تم الرفع إلى Vimeo بنجاح!');
-            addMessage({ type: 'ai', text: `✅ تم رفع الفيديو إلى Vimeo!\n🔗 الرابط: ${videoUrl}` });
-          },
-          onError: (err) => {
-            toast.error('فشل الرفع إلى Vimeo');
-            setExportMode('idle');
-          },
-          onStatusChange: () => {},
-        },
-        data.video_url,
-      );
-
-      manager.startUpload(file, data.upload_link);
-    } catch (err: any) {
-      toast.error(err.message || 'فشل الرفع');
-      setExportMode('idle');
-    }
+  const statusLabel: Record<ExportStatus, string> = {
+    idle: '',
+    preparing: '⏳ جارٍ التجهيز...',
+    downloading: '⬇️ جارٍ التحميل...',
+    uploading: '⬆️ جارٍ الرفع إلى Vimeo...',
+    completed: '✅ تم بنجاح!',
+    failed: '❌ فشلت العملية',
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur flex flex-col">
+    <div className="fixed inset-0 z-50 bg-background/95 backdrop-blur flex flex-col safe-area-all">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <h2 className="text-foreground font-bold text-base flex items-center gap-2">
@@ -129,6 +103,7 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
           onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
           onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
           onEnded={() => setIsPlaying(false)}
+          playsInline
         />
 
         {/* Controls overlay */}
@@ -149,24 +124,39 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
       </div>
 
       {/* Export progress */}
-      {exportMode !== 'idle' && exportMode !== 'done' && (
-        <div className="px-4 py-2">
+      {isExporting && (
+        <div className="px-4 py-3 border-t border-border bg-card">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-foreground flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin text-primary" />
+              {statusLabel[exportStatus]}
+            </span>
+            <span className="text-xs text-muted-foreground font-mono">{exportProgress}%</span>
+          </div>
           <Progress value={exportProgress} className="h-2" />
-          <p className="text-xs text-muted-foreground text-center mt-1">
-            {exportMode === 'downloading' ? 'جارٍ التحميل...' : 'جارٍ الرفع إلى Vimeo...'}
-            {' '}{exportProgress}%
-          </p>
+        </div>
+      )}
+
+      {/* Vimeo link result */}
+      {vimeoLink && (
+        <div className="px-4 py-3 bg-accent/10 border-t border-border flex items-center justify-between">
+          <span className="text-sm text-foreground flex items-center gap-2">
+            🔗 <span className="font-mono text-xs truncate max-w-[200px]">{vimeoLink}</span>
+          </span>
+          <a href={vimeoLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary text-sm hover:underline">
+            فتح <ExternalLink size={14} />
+          </a>
         </div>
       )}
 
       {/* Action buttons */}
-      <div className="p-4 border-t border-border space-y-3">
+      <div className="p-4 border-t border-border space-y-3 safe-area-bottom">
         {/* Approve / Reject */}
         <div className="flex gap-2">
-          <button onClick={onApprove} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl gold-gradient text-primary-foreground font-bold text-sm hover:opacity-90 transition-all">
-            <Check size={18} /> ✅ موافق — صدّر النسخة النهائية
+          <button onClick={onApprove} disabled={isExporting} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl gold-gradient text-primary-foreground font-bold text-sm hover:opacity-90 transition-all disabled:opacity-50">
+            <Check size={18} /> موافق — صدّر النهائي
           </button>
-          <button onClick={onReject} className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-muted border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 text-sm transition-all">
+          <button onClick={onReject} disabled={isExporting} className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-muted border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 text-sm transition-all disabled:opacity-50">
             <RotateCcw size={16} /> تعديل
           </button>
         </div>
@@ -175,15 +165,15 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
         <div className="flex gap-2">
           <button
             onClick={handleDownload}
-            disabled={exportMode === 'downloading' || exportMode === 'uploading'}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-secondary border border-border text-foreground text-sm font-medium hover:bg-muted transition-all disabled:opacity-50"
+            disabled={isExporting}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-secondary border border-border text-foreground text-sm font-medium hover:bg-muted transition-all disabled:opacity-50"
           >
             <Download size={16} /> تحميل إلى الجهاز
           </button>
           <button
             onClick={handleUploadToVimeo}
-            disabled={exportMode === 'downloading' || exportMode === 'uploading'}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-[hsl(var(--accent))] text-accent-foreground text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50"
+            disabled={isExporting}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
             <Upload size={16} /> رفع إلى Vimeo
           </button>
