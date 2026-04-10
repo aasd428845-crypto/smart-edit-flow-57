@@ -340,6 +340,7 @@ export const VideoPreview = () => {
           </div>
         )}
 
+        {showProgress && (
           <UploadProgress onPause={handlePause} onResume={handleResume} onCancel={handleCancel} />
         )}
       </div>
