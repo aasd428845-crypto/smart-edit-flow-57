@@ -1,12 +1,22 @@
 import { useRef, useState, useCallback } from 'react';
-import { Upload, Film, Play, Pause, Volume2, Maximize, FolderOpen, Link } from 'lucide-react';
+import { Upload, Film, Play, Pause, Volume2, Maximize, FolderOpen, Link, Video, Loader2 } from 'lucide-react';
 import { useEditorStore } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { UploadManager } from '@/lib/upload-manager';
 import { UploadProgress } from './UploadProgress';
 
-type SourceTab = 'upload' | 'local' | 'url';
+type SourceTab = 'upload' | 'local' | 'url' | 'vimeo';
+
+interface VimeoMeta {
+  title: string;
+  author: string;
+  duration: number;
+  width: number;
+  height: number;
+  thumbnail: string;
+  description: string;
+}
 
 let uploadManagerInstance: UploadManager | null = null;
 
@@ -23,6 +33,9 @@ export const VideoPreview = () => {
   const [sourceTab, setSourceTab] = useState<SourceTab>('upload');
   const [localPath, setLocalPath] = useState('');
   const [urlInput, setUrlInput] = useState('');
+  const [vimeoInput, setVimeoInput] = useState('');
+  const [vimeoMeta, setVimeoMeta] = useState<VimeoMeta | null>(null);
+  const [vimeoLoading, setVimeoLoading] = useState(false);
 
   const createProject = async () => {
     const { data, error } = await supabase
@@ -159,6 +172,50 @@ export const VideoPreview = () => {
     addMessage({ type: 'ai', text: `✅ تم ربط الفيديو: ${urlInput}` });
   };
 
+  const handleVimeoFetch = async () => {
+    const url = vimeoInput.trim();
+    if (!url) return;
+    if (!url.match(/vimeo\.com\/\d+/)) {
+      toast.error('الرابط غير صالح — يجب أن يكون رابط Vimeo صحيح');
+      return;
+    }
+    setVimeoLoading(true);
+    setVimeoMeta(null);
+    try {
+      const res = await fetch(`https://vimeo.com/api/oembed.json?url=${encodeURIComponent(url)}`);
+      if (!res.ok) throw new Error('فشل جلب البيانات');
+      const data = await res.json();
+      const meta: VimeoMeta = {
+        title: data.title,
+        author: data.author_name,
+        duration: data.duration,
+        width: data.width,
+        height: data.height,
+        thumbnail: data.thumbnail_url,
+        description: data.description || '',
+      };
+      setVimeoMeta(meta);
+      toast.success('✅ تم جلب بيانات الفيديو');
+    } catch (err: any) {
+      toast.error('فشل جلب بيانات Vimeo — تأكد من الرابط');
+    } finally {
+      setVimeoLoading(false);
+    }
+  };
+
+  const handleVimeoImport = async () => {
+    if (!vimeoInput.trim()) return;
+    setVideoSource(vimeoInput, 'remote');
+    setVideoUrl(vimeoInput);
+    const pid = await createProject();
+    if (!pid) return;
+    const metaText = vimeoMeta
+      ? `📹 **${vimeoMeta.title}**\n👤 ${vimeoMeta.author}\n⏱️ ${Math.floor(vimeoMeta.duration / 60)}:${(vimeoMeta.duration % 60).toString().padStart(2, '0')}\n📐 ${vimeoMeta.width}×${vimeoMeta.height}`
+      : '';
+    addMessage({ type: 'ai', text: `✅ تم استيراد فيديو من Vimeo!\n${metaText}\n\nيمكنك الآن كتابة أمر المونتاج.` });
+    toast.success('✅ تم استيراد الفيديو من Vimeo');
+  };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
@@ -185,8 +242,9 @@ export const VideoPreview = () => {
   if (showUploadZone) {
     const tabs: { id: SourceTab; label: string; icon: React.ReactNode }[] = [
       { id: 'upload', label: 'رفع ملف', icon: <Upload size={16} /> },
-      { id: 'local', label: 'مسار محلي', icon: <FolderOpen size={16} /> },
+      { id: 'vimeo', label: 'Vimeo', icon: <Video size={16} /> },
       { id: 'url', label: 'رابط URL', icon: <Link size={16} /> },
+      { id: 'local', label: 'مسار محلي', icon: <FolderOpen size={16} /> },
     ];
 
     return (
@@ -234,6 +292,51 @@ export const VideoPreview = () => {
           <div className="flex gap-2 w-80">
             <input value={urlInput} onChange={e => setUrlInput(e.target.value)} placeholder="https://example.com/video.mp4" className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring text-left" dir="ltr" />
             <button onClick={handleUrlSubmit} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm">تحميل</button>
+          </div>
+        )}
+
+        {sourceTab === 'vimeo' && (
+          <div className="w-80 space-y-3">
+            <div className="flex gap-2">
+              <input
+                value={vimeoInput}
+                onChange={e => setVimeoInput(e.target.value)}
+                placeholder="https://vimeo.com/123456789"
+                className="flex-1 bg-muted rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring text-left"
+                dir="ltr"
+              />
+              <button
+                onClick={handleVimeoFetch}
+                disabled={vimeoLoading}
+                className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {vimeoLoading ? <Loader2 size={14} className="animate-spin" /> : <Video size={14} />}
+                جلب
+              </button>
+            </div>
+
+            {vimeoMeta && (
+              <div className="bg-muted/50 border border-border rounded-xl p-3 space-y-2 animate-fade-in-up">
+                {vimeoMeta.thumbnail && (
+                  <img src={vimeoMeta.thumbnail} alt={vimeoMeta.title} className="w-full rounded-lg object-cover aspect-video" />
+                )}
+                <h4 className="text-foreground font-bold text-sm truncate">{vimeoMeta.title}</h4>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span>👤 {vimeoMeta.author}</span>
+                  <span>⏱️ {Math.floor(vimeoMeta.duration / 60)}:{(vimeoMeta.duration % 60).toString().padStart(2, '0')}</span>
+                  <span>📐 {vimeoMeta.width}×{vimeoMeta.height}</span>
+                </div>
+                {vimeoMeta.description && (
+                  <p className="text-xs text-muted-foreground line-clamp-2">{vimeoMeta.description}</p>
+                )}
+                <button
+                  onClick={handleVimeoImport}
+                  className="w-full py-2.5 rounded-lg gold-gradient text-primary-foreground font-bold text-sm hover:opacity-90 transition-all"
+                >
+                  📥 استيراد للمعالجة
+                </button>
+              </div>
+            )}
           </div>
         )}
 
