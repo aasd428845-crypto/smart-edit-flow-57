@@ -1,15 +1,89 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
+import { toBlobURL } from '@ffmpeg/util';
+import { getLocalApiUrl } from '@/store/editorStore';
 
 let ffmpeg: FFmpeg | null = null;
 let loaded = false;
 
-export type FFmpegAction =  'trim' | 'speed' | 'reverse' | 'denoise' | 'color_grade' | 'montage' | 'info' | 'add_subtitles' | 'transcribe' | 'rotate';
+export type FFmpegAction =
+  | 'trim' | 'speed' | 'reverse' | 'denoise' | 'color_grade' | 'montage' | 'info' | 'add_subtitles' | 'transcribe' | 'rotate'
+  | 'extract_audio' | 'remove_audio' | 'replace_audio' | 'add_text'
+  | 'change_aspect' | 'add_watermark' | 'merge_videos' | 'compress'
+  | 'apply_template' | 'slideshow';
 export interface ProcessResult {
   success: boolean;
   outputUrl?: string;
   message: string;
-  info?: Record<string, string>;
+  info?: Record<string, any>;
+}
+
+// Actions that can fall back to in-browser FFmpeg.wasm if the server is unreachable
+const WASM_SUPPORTED: FFmpegAction[] = ['trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info', 'rotate'];
+
+// Upload a blob URL to the local server so it can be processed by server-side FFmpeg.
+async function ensureServerUrl(source: string): Promise<string> {
+  if (source.startsWith('http://localhost:8787') || source.startsWith('http://127.0.0.1')) return source;
+  const res = await fetch(source);
+  const blob = await res.blob();
+  const fd = new FormData();
+  fd.append('file', blob, 'video.mp4');
+  const up = await fetch(getLocalApiUrl('/api/upload'), { method: 'POST', body: fd });
+  const data = await up.json();
+  if (!up.ok || !data.url) throw new Error(data.error || 'فشل رفع الفيديو إلى محرك المعالجة');
+  return data.url;
+}
+
+function formatInfo(info: any): string {
+  if (!info) return '';
+  const lines = [
+    `• **المدة:** ${Number(info.duration || 0).toFixed(1)} ثانية`,
+    `• **الأبعاد:** ${info.width}×${info.height}`,
+    `• **المعدل:** ${info.fps || '?'} إطار/ثانية`,
+    `• **ترميز الفيديو:** ${info.video_codec || '?'}`,
+    info.audio_codec ? `• **ترميز الصوت:** ${info.audio_codec}` : '• **بدون صوت**',
+    info.bitrate ? `• **معدل البت:** ${(info.bitrate / 1000).toFixed(0)} kbps` : '',
+    `• **الحجم:** ${((info.size || 0) / 1024).toFixed(1)} KB`,
+  ];
+  return lines.filter(Boolean).join('\n');
+}
+
+export async function processVideo(
+  action: FFmpegAction,
+  videoSource: string,
+  params: Record<string, any> = {},
+): Promise<ProcessResult> {
+  // Primary path: server-side FFmpeg engine (full feature set: Arabic text, subtitles,
+  // audio replace, aspect change, watermarks, merging, templates, slideshows...)
+  try {
+    const video_url = await ensureServerUrl(videoSource);
+    const body: Record<string, any> = {
+      action,
+      video_url,
+      audio_url: params.audio_url,
+      image_url: params.image_url,
+      video2_url: params.video2_url,
+      images: params.images,
+      params,
+    };
+    const res = await fetch(getLocalApiUrl('/api/process'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.error || `فشلت المعالجة (${res.status})`);
+
+    if (action === 'info') {
+      return { success: true, message: `📊 معلومات الفيديو:\n\n${formatInfo(data.info)}`, info: data.info };
+    }
+    return { success: true, outputUrl: data.output_url, message: `✅ تم تنفيذ "${action}" بنجاح`, info: data.info };
+  } catch (err: any) {
+    // Fallback: in-browser FFmpeg.wasm for the basic set of actions
+    if (WASM_SUPPORTED.includes(action)) {
+      return processVideoWasm(action, videoSource, params);
+    }
+    return { success: false, message: `❌ فشلت معالجة "${action}": ${err?.message || 'غير معروف'}` };
+  }
 }
 
 async function getFFmpeg(): Promise<FFmpeg> {
@@ -62,7 +136,7 @@ async function readOutput(ff: FFmpeg, outputName: string): Promise<string> {
   return URL.createObjectURL(blob);
 }
 
-export async function processVideo(
+export async function processVideoWasm(
   action: FFmpegAction,
   videoSource: string,
   params: Record<string, any> = {},
@@ -105,6 +179,9 @@ export async function processVideo(
         let eq = 'eq=brightness=0.06:contrast=1.1:saturation=1.3';
         if (style === 'cinematic') eq = 'eq=brightness=-0.05:contrast=1.2:saturation=0.9';
         if (style === 'cold') eq = 'eq=brightness=0.02:contrast=1.1:saturation=0.8';
+        if (style === 'golden') eq = 'eq=brightness=0.08:contrast=1.15:saturation=1.35:gamma=1.05';
+        if (style === 'vintage') eq = 'eq=brightness=0.02:contrast=0.95:saturation=0.7';
+        if (style === 'b_w') eq = 'hue=s=0,eq=contrast=1.15';
         args = ['-i', inputName, '-vf', eq, '-c:a', 'copy', outputName];
         break;
       }
@@ -138,7 +215,7 @@ export async function processVideo(
       case 'transcribe': {
         return {
           success: false,
-          message: `⚠️ إجراء "${action}" يحتاج إلى معالجة سحابية (Cloud) وهي غير متوفرة محلياً حالياً.`,
+          message: `⚠️ إجراء "${action}" يحتاج إلى محرك المعالجة السيرفري (غير متصل حالياً).`,
         };
       }
 
@@ -167,7 +244,7 @@ export async function processVideo(
     return {
       success: true,
       outputUrl,
-      message: `✅ تم تنفيذ "${action}" بنجاح`,
+      message: `✅ تم تنفيذ "${action}" بنجاح (في المتصفح)`,
     };
   } catch (err: any) {
     console.error('[FFmpeg Error]', err);

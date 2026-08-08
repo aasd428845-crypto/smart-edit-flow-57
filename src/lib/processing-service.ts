@@ -61,7 +61,7 @@ export async function executeJob(
     callbacks.onStatusChange(job);
   };
 
-  callbacks.onMessage('status', `⏳ جارٍ تنفيذ "${action}" محلياً في المتصفح...`);
+  callbacks.onMessage('status', `⏳ جارٍ تنفيذ "${action}" عبر محرك المعالجة...`);
 
   try {
     // Step 1: Process video

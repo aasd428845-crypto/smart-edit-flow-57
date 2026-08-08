@@ -24,9 +24,22 @@ const quickSuggestions = [
   { label: '📝 فرّغ', message: 'فرّغ الكلام لنص عربي' },
   { label: '📊 معلومات', message: 'معلومات عن الفيديو' },
   { label: '🔄 اعكس', message: 'اعكس الفيديو' },
+  { label: '📐 عمودي 9:16', message: 'غيّر المقاس إلى 9:16 لشورت وتيك توك' },
+  { label: '🏷️ نص على الفيديو', message: 'أضف نصاً على الفيديو في المنتصف' },
+  { label: '🎵 استخرج الصوت', message: 'استخرج الصوت من الفيديو كملف MP3' },
+  { label: '🔇 احذف الصوت', message: 'احذف الصوت من الفيديو' },
+  { label: '✨ قالب سينمائي', message: 'طبق قالب سينمائي' },
+  { label: '🎬 قالب شورت', message: 'طبق قالب شورت 9:16' },
+  { label: '🌍 ترجم الفيديو', message: 'ترجم الفيديو وأضف ترجمات عربية مدمجة' },
+  { label: '🗣️ دبلج الفيديو', message: 'دبلج الفيديو بصوت عربي' },
 ];
 
-const VALID_ACTIONS: FFmpegAction[] = ['trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info', 'add_subtitles', 'transcribe', 'rotate'];
+const VALID_ACTIONS: FFmpegAction[] = [
+  'trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info', 'add_subtitles', 'transcribe', 'rotate',
+  'extract_audio', 'remove_audio', 'replace_audio', 'add_text',
+  'change_aspect', 'add_watermark', 'merge_videos', 'compress',
+  'apply_template', 'slideshow',
+];
 
 export const AIChatPanel = () => {
   const {
@@ -117,14 +130,23 @@ export const AIChatPanel = () => {
     for (const tc of toolCalls) {
       // Client-side tools (Vimeo info, transcribe, remove bg)
       if (toolHandlers[tc.name]) {
-        addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ: ${tc.name}...` });
+        addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ: ${tc.name}... (قد يستغرق دقيقة أو أكثر)` });
         try {
           const result = await toolHandlers[tc.name](tc.arguments);
           if (result.success) {
-            const formatted = typeof result.data === 'object'
-              ? Object.entries(result.data).map(([k, v]) => `• **${k}**: ${v}`).join('\n')
-              : String(result.data);
-            addMessage({ type: 'ai', text: `✅ نتيجة ${tc.name}:\n\n${formatted}` });
+            const data = result.data || {};
+            if (data.video_url) {
+              setVideoSource(data.video_url, 'remote');
+              setFullQualityUrl(data.video_url);
+              addMessage({ type: 'execution_result', text: `✅ اكتمل ${tc.name}! تم تحميل النتيجة في المشغل.`, outputUrl: data.video_url, status: 'completed' });
+            }
+            if (data.srt) {
+              addMessage({ type: 'ai', text: `📝 الترجمة:\n\n${data.srt}` });
+            }
+            const summary = Object.entries(data)
+              .filter(([k, v]) => k !== 'srt' && k !== 'segments' && k !== 'video_url' && v != null)
+              .map(([k, v]) => `• **${k}**: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n');
+            if (summary) addMessage({ type: 'ai', text: `✅ نتيجة ${tc.name}:\n\n${summary}` });
           } else {
             addMessage({ type: 'error', text: `❌ فشل ${tc.name}: ${result.error}` });
           }
@@ -205,7 +227,7 @@ export const AIChatPanel = () => {
       const cloudOk = cloudRes.ok;
       setIsConnected(cloudOk);
 
-      const summary = `🖥️ حالة المنصة:\n☁️ الذكاء الاصطناعي: ${cloudOk ? '✅ متصل' : '❌ غير متصل'}\n🎞️ FFmpeg.wasm: ✅ مدمج في المتصفح\n📦 الأدوات: transcribe, remove_background, executeVideoCommand (محلي)`;
+      const summary = `🖥️ حالة المنصة:\n☁️ الذكاء الاصطناعي: ${cloudOk ? '✅ متصل' : '❌ غير متصل'}\n🎞️ محرك المعالجة (سيرفر FFmpeg): ${cloudOk ? '✅ متصل' : '❌ غير متصل'}\n📦 الأدوات: قص، سرعة، عكس، تنقية صوت، ألوان، تدوير، مونتاج، استخراج/إزالة صوت، ترجمات عربية، نص، مقاسات، شعار مائي، دمج، ضغط، قوالب، سلايدات، تفريغ، إزالة خلفية\n🌍 ترجمة: ترجمة الفيديو لترجمات عربية مدمجة أو ملف SRT\n🗣️ دبلجة: دبلجة الفيديو بصوت عربي (ذكاء اصطناعي)`;
       addMessage({ type: 'ai', text: summary });
     } catch (err: any) {
       addMessage({ type: 'error', text: `⚠️ خطأ في الفحص: ${err?.message || 'غير معروف'}` });

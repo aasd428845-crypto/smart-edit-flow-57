@@ -8,15 +8,22 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { processAction, listTemplates } from './processor.js';
+import { transcribeWithWhisper, ttsToWav, dubVideo, buildSRT, WHISPER_READY } from './speech.js';
+import crypto from 'crypto';
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const PORT = process.env.PORT || 8787;
 const UPLOAD_DIR = path.join(__dirname, 'storage', 'uploads');
+const OUTPUT_DIR = path.join(__dirname, 'storage', 'outputs');
+const CACHE_DIR = path.join(__dirname, 'storage', 'cache');
 const PUBLIC_URL = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 const app = express();
 app.use(cors());
@@ -35,6 +42,9 @@ const agentToModel = {
   deepseek: process.env.MODEL_DEEPSEEK || 'openai/gpt-oss-20b:free',
 };
 
+const DUB_VOICE = process.env.DUB_VOICE || 'ar-EG-SalmaNeural';
+const LANG_NAMES = { ar: 'العربية', en: 'الإنجليزية', fr: 'الفرنسية', es: 'الإسبانية', de: 'الألمانية', tr: 'التركية', ru: 'الروسية', zh: 'الصينية' };
+
 const tools = [
   {
     type: 'function',
@@ -50,13 +60,16 @@ const tools = [
             enum: [
               'trim', 'denoise', 'speed', 'reverse', 'color_grade',
               'add_subtitles', 'montage', 'info', 'transcribe', 'rotate',
+              'extract_audio', 'remove_audio', 'replace_audio', 'add_text',
+              'change_aspect', 'add_watermark', 'merge_videos', 'compress',
+              'apply_template', 'slideshow',
             ],
             description: 'The video editing action to perform',
           },
           params: {
             type: 'object',
             description:
-              'Parameters for the action, e.g. {start: 0, end: 30} for trim, {factor: 2} for speed',
+              'Parameters for the action. Examples: trim {start:0,end:30}; speed {factor:2}; color_grade {style:"golden"}; rotate {degrees:90}; add_subtitles {subtitles:[{start:0,end:5,text:"..."}]}; add_text {text:"العنوان",position:"center"}; change_aspect {aspect:"9:16"}; extract_audio {}; remove_audio {}; replace_audio {audio_url:"...",loop_audio:true}; add_watermark {image_url:"...",position:"bottom-right"}; merge_videos {video2_url:"...",transition:"fade"}; compress {quality:"medium"}; apply_template {template_id:"youtube_video"}; slideshow {images:[...],aspect:"16:9",duration_per_image:3}',
           },
         },
         required: ['action'],
@@ -102,21 +115,99 @@ const tools = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'translate_subtitles',
+      description:
+        'Transcribe a video, translate the speech and produce Arabic (or other language) subtitles. Use when the user asks to translate a video, add translated subtitles, ترجمة الفيديو, اكتب ترجمات, ترجم الكلام, or \'حول الفيديو لترجمة عربية\'.',
+      parameters: {
+        type: 'object',
+        properties: {
+          video_url: {
+            type: 'string',
+            description: 'URL of the video to translate',
+          },
+          target_lang: {
+            type: 'string',
+            description: 'Target language code (ar, en, fr, es, de, tr, ru). Default: ar',
+          },
+          mode: {
+            type: 'string',
+            enum: ['srt', 'burn'],
+            description: 'srt = downloadable subtitle file; burn = subtitles baked into the video',
+          },
+        },
+        required: ['video_url'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'dub_video',
+      description:
+        'Dub a video: transcribe it, translate the speech, and replace/overlay the audio with a spoken Arabic (or other language) voice via AI speech synthesis. Use when the user asks to dub, دبلجة, صوّت الفيديو, or \'حول الفيديو إلى دبلجة عربية\'.',
+      parameters: {
+        type: 'object',
+        properties: {
+          video_url: {
+            type: 'string',
+            description: 'URL of the video to dub',
+          },
+          target_lang: {
+            type: 'string',
+            description: 'Target language code (ar, en, fr, es, de, tr, ru). Default: ar',
+          },
+          voice: {
+            type: 'string',
+            enum: ['ar-EG-SalmaNeural', 'ar-EG-ShakirNeural', 'ar-SA-ZariyahNeural', 'ar-SA-HamedNeural', 'en-US-JennyNeural', 'en-US-GuyNeural'],
+            description: 'TTS voice to use',
+          },
+          keep_original: {
+            type: 'number',
+            description: 'Original audio volume kept as background (0-1). Default 0.15',
+          },
+        },
+        required: ['video_url'],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 const systemPrompt = (project_context) => `أنت "مونتاجي AI" — مساعد ذكي متخصص في مونتاج الفيديو باللغة العربية.
 
 قواعد صارمة:
-- عندما يطلب المستخدم أي عملية مونتاج (قص، تسريع، عكس، تنقية صوت، تصحيح ألوان، ترجمة، مونتاج، معلومات، إلخ)، يجب أن تستدعي أداة executeVideoCommand فوراً.
+- عندما يطلب المستخدم أي عملية مونتاج (قص، تسريع، عكس، تنقية صوت، تصحيح ألوان، ترجمة، مونتاج، معلومات، إزالة صوت، استخراج صوت، إضافة صوت، نص، ترجمات، تغيير مقاس، شعار مائي، دمج، ضغط، قالب، سلايدات، إلخ)، يجب أن تستدعي أداة executeVideoCommand فوراً.
 - عندما يطلب المستخدم تفريغ أو نسخ فيديو لنص، استدعِ أداة transcribe_video مع رابط الفيديو النشط.
+- عندما يطلب المستخدم ترجمة فيديو أو إضافة ترجمات مترجمة (عربية أو غيرها)، استدعِ أداة translate_subtitles مع رابط الفيديو النشط. إن طلب ترجمات مدمجة في الفيديو استخدم mode:"burn"، وإن طلب ملف ترجمات استخدم mode:"srt".
+- عندما يطلب المستخدم دبلجة الفيديو أو التحدث بصوت عربي بدلاً من الصوت الأصلي، استدعِ أداة dub_video مع رابط الفيديو النشط فوراً دون أي رد نصي.
 - عندما يطلب المستخدم إزالة خلفية صورة، استدعِ أداة remove_background.
 - لا تشرح كيفية القص أو المونتاج. لا تعطِ تعليمات نصية. فقط نفّذ الأداة.
 - إذا كان الطلب محادثة عادية أو سؤال لا يتعلق بتحرير فيديو، أجب نصياً بشكل مختصر.
 
-الأدوات المتاحة:
-- executeVideoCommand: عمليات المونتاج (trim, denoise, speed, reverse, color_grade, add_subtitles, montage, info, transcribe, rotate)
-- transcribe_video: تفريغ الكلام لنص
-- remove_background: إزالة خلفية صورة
+إجراءات executeVideoCommand:
+- trim: قص {start, end}
+- speed: تغيير السرعة {factor}
+- reverse: عكس
+- denoise: تنقية الصوت
+- color_grade: تصحيح ألوان {style: warm|cinematic|cold|golden|vintage|b_w}
+- montage: مونتاج كامل
+- rotate: تدوير {degrees}
+- info: معلومات الفيديو
+- extract_audio: استخراج الصوت كـ MP3
+- remove_audio: إزالة الصوت كلياً
+- replace_audio: استبدال/إضافة صوت {audio_url, loop_audio}
+- add_subtitles: ترجمات مدمجة {subtitles:[{start,end,text}]} أو {srt:"..."}
+- add_text: نص على الفيديو {text, position, color}
+- change_aspect: تغيير المقاس {aspect: "9:16"|"16:9"|"1:1", fit}
+- add_watermark: شعار مائي {image_url, position, scale}
+- merge_videos: دمج فيديوهات {video2_url, transition}
+- compress: ضغط {quality: low|medium|high}
+- apply_template: تطبيق قالب {template_id, text} — القوالب: youtube_video, short_reels, story_square, cinematic_film, wedding_golden, retro_black_white, title_overlay
+- slideshow: سلايدات صور {images:[...], aspect, duration_per_image}
 
 ${project_context?.cinematic ? '- الوضع السينمائي مفعّل: استخدم أسلوب سينمائي متقدم' : ''}
 ${project_context?.template_id ? `- القالب المختار: ${project_context.template_id}` : ''}
@@ -156,8 +247,10 @@ function gatewayConfig() {
   };
 }
 
-async function chatCompletion({ model, messages, tools: fnTools }) {
-  const gw = gatewayConfig();
+async function chatCompletion({ model, messages, tools: fnTools, preferredBase, preferredKey, preferredHeaders, preferredLabel }) {
+  const gw = preferredBase
+    ? { base: preferredBase, key: preferredKey, extraHeaders: preferredHeaders || {}, label: preferredLabel || 'AI' }
+    : gatewayConfig();
   const headers = {
     Authorization: `Bearer ${gw.key}`,
     'Content-Type': 'application/json',
@@ -177,11 +270,99 @@ async function chatCompletion({ model, messages, tools: fnTools }) {
   return res.json();
 }
 
+// If OmniRoute is unreachable (network error), transparently fall back to OpenRouter.
+function gatewayFallback() {
+  if (AI_PROVIDER === 'omniroute') {
+    return {
+      base: OPENROUTER_BASE,
+      key: OPENROUTER_API_KEY,
+      headers: {
+        'HTTP-Referer': process.env.APP_URL || 'http://localhost:8080',
+        'X-Title': 'Montaji AI',
+      },
+      label: 'OpenRouter (احتياط)',
+    };
+  }
+  return null;
+}
+
 // Fallback model chain — free models are rate-limited, so we try others on 429/404.
 const FALLBACK_MODELS = (process.env.FALLBACK_MODELS || '')
   .split(',')
   .map((m) => m.trim())
   .filter(Boolean);
+
+function parseTranslatedJSON(content) {
+  const text = String(content || '').trim().replace(/^```(json)?/i, '').replace(/```$/, '').trim();
+  const m = text.match(/\[[\s\S]*\]/);
+  try {
+    const arr = JSON.parse(m ? m[0] : text);
+    if (Array.isArray(arr) && arr.length) return arr;
+  } catch {}
+  return null;
+}
+
+// Translate whisper segments to targetLang via the active gateway (with OmniRoute→OpenRouter fallback).
+async function translateSegmentsLLM(segments, targetLang) {
+  const langName = LANG_NAMES[targetLang] || targetLang;
+  const numbered = segments.map((s, i) => `${i + 1}\t${s.text}`).join('\n');
+  const messages = [
+    { role: 'system', content: 'أنت مترجم محترف دقيق. لا تخرج إلا JSON صالحاً فقط دون أي نص آخر.' },
+    {
+      role: 'user',
+      content: `ترجم كل مقطع في القائمة التالية إلى ${langName}. أعد قائمة JSON بصيغة: [{"index":1,"text":"الترجمة"},{"index":2,"text":"الترجمة"},...] بنفس عدد العناصر وبنفس الترتيب تماماً. لا تحذف أو تدمج أو تضيف أي عنصر.\n${numbered}`,
+    },
+  ];
+  const model = process.env.TRANSLATE_MODEL || agentToModel.gemini;
+  const modelChain = [model, ...FALLBACK_MODELS.filter((m) => m !== model)];
+  let lastError = null;
+
+  for (const m of modelChain) {
+    try {
+      const data = await chatCompletion({ model: m, messages });
+      const parsed = parseTranslatedJSON(data.choices?.[0]?.message?.content || '');
+      if (parsed) return parsed;
+      lastError = new Error('تنسيق الترجمة غير صالح من النموذج');
+    } catch (e) {
+      const fb = gatewayFallback();
+      if (fb && fb.key && (e.cause?.code === 'ECONNREFUSED' || e.cause?.code === 'ECONNRESET' || e.cause?.code === 'ENOTFOUND' || e.message?.includes('fetch failed'))) {
+        try {
+          const fbModel = m === 'auto/smart'
+            ? (process.env.FALLBACK_OPENROUTER_MODEL || 'openai/gpt-oss-20b:free')
+            : m;
+          const data = await chatCompletion({ model: fbModel, messages, preferredBase: fb.base, preferredKey: fb.key, preferredHeaders: fb.headers, preferredLabel: fb.label });
+          const parsed = parseTranslatedJSON(data.choices?.[0]?.message?.content || '');
+          if (parsed) return parsed;
+        } catch (e2) {
+          lastError = e2;
+          break;
+        }
+      }
+      lastError = e;
+      if (e.status !== 429 && e.status !== 404 && e.status !== 503 && e.status !== 402) break;
+    }
+  }
+  throw lastError || new Error('فشلت الترجمة');
+}
+
+async function applySegmentsTranslation(segments, targetLang, sourceLang) {
+  const lang = String(targetLang || 'ar').toLowerCase();
+  const src = String(sourceLang || '').toLowerCase();
+  if (!lang || lang === 'auto' || lang === 'none' || lang === src || lang === 'original') {
+    return segments;
+  }
+  const translated = await translateSegmentsLLM(segments, lang);
+  const byIndex = new Map(translated.map((t) => [Number(t.index), String(t.text || '')]));
+  return segments.map((s, i) => ({ ...s, text: byIndex.get(i + 1) || byIndex.get(i) || s.text }));
+}
+
+function moveToOutputs(srcPath, label) {
+  const ext = srcPath.split('.').pop();
+  const fname = `${Date.now()}_${label}.${ext}`;
+  const dest = path.join(OUTPUT_DIR, fname);
+  fs.renameSync(srcPath, dest);
+  return { fname, output_url: `${PUBLIC_URL}/outputs/${fname}` };
+}
 
 app.get('/api/health', (req, res) => {
   const gw = gatewayConfig();
@@ -227,11 +408,33 @@ app.post('/api/chat', async (req, res) => {
             name: tc.function.name,
             arguments: JSON.parse(tc.function.arguments || '{}'),
           }));
-          return res.json({ tool_calls: toolCalls });
+          return res.json({ tool_calls: toolCalls, gateway: 'primary' });
         }
 
-        return res.json({ reply: choice?.message?.content || 'لم أتمكن من الرد' });
+        return res.json({ reply: choice?.message?.content || 'لم أتمكن من الرد', gateway: 'primary' });
       } catch (e) {
+        // Network failure against the local gateway (OmniRoute down) → transparent fallback
+        const fb = gatewayFallback();
+        if (fb && fb.key && (e.cause?.code === 'ECONNREFUSED' || e.cause?.code === 'ECONNRESET' || e.cause?.code === 'ENOTFOUND' || e.message?.includes('fetch failed'))) {
+          try {
+            const fbModel = m === 'auto/smart'
+              ? (process.env.FALLBACK_OPENROUTER_MODEL || 'openai/gpt-oss-20b:free')
+              : m;
+            const data = await chatCompletion({ model: fbModel, messages, tools, preferredBase: fb.base, preferredKey: fb.key, preferredHeaders: fb.headers, preferredLabel: fb.label });
+            const choice = data.choices?.[0];
+            if (choice?.message?.tool_calls?.length) {
+              const toolCalls = choice.message.tool_calls.map((tc) => ({
+                name: tc.function.name,
+                arguments: JSON.parse(tc.function.arguments || '{}'),
+              }));
+              return res.json({ tool_calls: toolCalls, gateway: 'fallback' });
+            }
+            return res.json({ reply: choice?.message?.content || 'لم أتمكن من الرد', gateway: 'fallback' });
+          } catch (e2) {
+            lastError = e2;
+            break;
+          }
+        }
         lastError = e;
         if (e.status !== 429 && e.status !== 404 && e.status !== 503 && e.status !== 402) {
           break;
@@ -291,13 +494,89 @@ app.use('/uploads', express.static(UPLOAD_DIR, {
 
 async function downloadToTemp(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`فشل تنزيل الفيديو: ${res.status}`);
+  if (!res.ok) throw new Error(`فشل تنزيل الملف: ${res.status}`);
   const ext = (url.split('?')[0].split('.').pop() || 'mp4').slice(0, 6);
   const tmp = path.join(os.tmpdir(), `montaji_${Date.now()}.${ext}`);
   const buf = Buffer.from(await res.arrayBuffer());
   fs.writeFileSync(tmp, buf);
   return tmp;
 }
+
+// Download a media URL to a persistent cache dir (reused across requests).
+async function downloadToCache(url) {
+  const hash = crypto.createHash('sha1').update(url).digest('hex').slice(0, 16);
+  const ext = (url.split('?')[0].split('.').pop() || 'bin').toLowerCase().slice(0, 6);
+  const dest = path.join(CACHE_DIR, `${hash}.${ext}`);
+  if (fs.existsSync(dest) && fs.statSync(dest).size > 0) return dest;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`فشل تنزيل الملف: ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  fs.writeFileSync(dest, buf);
+  return dest;
+}
+
+app.get('/api/templates', (req, res) => {
+  res.json({ success: true, templates: listTemplates() });
+});
+
+app.post('/api/process', async (req, res) => {
+  let outputPath = null;
+  const cleanup = [];
+  try {
+    const { action, video_url, audio_url, image_url, video2_url, images = [], params = {} } = req.body || {};
+    if (!action) return res.status(400).json({ error: 'action is required' });
+
+    const files = {};
+    if (video_url) { files.videoPath = await downloadToCache(video_url); cleanup.push(files.videoPath); }
+    if (audio_url) { files.audioPath = await downloadToCache(audio_url); cleanup.push(files.audioPath); }
+    if (image_url) { files.imagePath = await downloadToCache(image_url); cleanup.push(files.imagePath); }
+    if (video2_url) { files.video2Path = await downloadToCache(video2_url); cleanup.push(files.video2Path); }
+    if (images.length) {
+      files.imagePaths = [];
+      for (const img of images) {
+        const p = await downloadToCache(img);
+        files.imagePaths.push(p);
+        cleanup.push(p);
+      }
+    }
+
+    const result = await processAction(action, files, params);
+
+    if (result.outputPath) {
+      const ext = result.outputPath.split('.').pop();
+      const fname = `${Date.now()}_${action}.${ext}`;
+      outputPath = path.join(OUTPUT_DIR, fname);
+      fs.renameSync(result.outputPath, outputPath);
+      cleanup.push(outputPath);
+      return res.json({
+        success: true,
+        action,
+        output_url: `${PUBLIC_URL}/outputs/${fname}`,
+        filename: fname,
+        info: result.info || null,
+      });
+    }
+
+    return res.json({ success: true, action, info: result.info, output_url: null });
+  } catch (e) {
+    console.error('process error:', e);
+    return res.status(500).json({ error: e.message || 'فشلت المعالجة' });
+  } finally {
+    // Keep cache files, clean up temp/output files that are not the returned output
+    for (const p of cleanup) {
+      if (p && p !== outputPath && !p.includes(CACHE_DIR)) {
+        try { fs.unlinkSync(p); } catch {}
+      }
+    }
+  }
+});
+
+app.use('/outputs', express.static(OUTPUT_DIR, {
+  setHeaders: (res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Accept-Ranges', 'bytes');
+  },
+}));
 
 app.post('/api/transcribe', async (req, res) => {
   let videoPath = null;
@@ -357,6 +636,117 @@ app.post('/api/transcribe', async (req, res) => {
     for (const p of [videoPath, audioPath]) {
       if (p) { try { fs.unlinkSync(p); } catch {} }
     }
+  }
+});
+
+app.post('/api/subtitles', async (req, res) => {
+  let videoPath = null;
+  let outputPath = null;
+  try {
+    const { video_url, mode = 'srt', target_lang = 'ar', source_language, min_gap = 0.15, max_len = 4 } = req.body || {};
+    if (!video_url) return res.status(400).json({ error: 'video_url is required' });
+    if (!WHISPER_READY) return res.status(500).json({ error: 'Whisper غير مهيأ على الخادم' });
+
+    videoPath = await downloadToCache(video_url);
+    const { language, segments } = await transcribeWithWhisper(videoPath, { language: source_language });
+
+    // Merge tiny gaps between segments so subtitles don't flicker.
+    const merged = [];
+    for (const s of segments) {
+      const prev = merged[merged.length - 1];
+      if (prev && s.start - prev.end < Number(min_gap) && s.end - s.start <= Number(max_len)) {
+        prev.end = Math.max(prev.end, s.end);
+        prev.text = `${prev.text} ${s.text}`.trim();
+      } else {
+        merged.push({ ...s });
+      }
+    }
+
+    const translated = await applySegmentsTranslation(merged, target_lang, language);
+    const srt = buildSRT(translated);
+
+    if (mode === 'burn') {
+      const result = await processAction('add_subtitles', { videoPath }, { subtitles: translated });
+      const moved = moveToOutputs(result.outputPath, 'subtitled');
+      outputPath = moved.fname;
+      return res.json({
+        success: true, mode, language, target_lang,
+        segments: translated,
+        srt,
+        video_url: moved.output_url,
+        filename: moved.fname,
+      });
+    }
+
+    const srtFile = path.join(OUTPUT_DIR, `${Date.now()}_subtitles.srt`);
+    fs.writeFileSync(srtFile, srt, 'utf8');
+    outputPath = path.basename(srtFile);
+    return res.json({
+      success: true, mode, language, target_lang,
+      segments: translated,
+      srt,
+      subtitle_url: `${PUBLIC_URL}/outputs/${path.basename(srtFile)}`,
+    });
+  } catch (e) {
+    console.error('subtitles error:', e);
+    return res.status(500).json({ error: e.message || 'فشلت معالجة الترجمة' });
+  }
+});
+
+app.post('/api/dub', async (req, res) => {
+  let videoPath = null;
+  let outputPath = null;
+  const tracks = [];
+  try {
+    const {
+      video_url, target_lang = 'ar', voice = DUB_VOICE,
+      source_language, keep_original = 0.15, min_gap = 0.15, max_len = 4,
+    } = req.body || {};
+    if (!video_url) return res.status(400).json({ error: 'video_url is required' });
+    if (!WHISPER_READY) return res.status(500).json({ error: 'Whisper غير مهيأ على الخادم' });
+
+    videoPath = await downloadToCache(video_url);
+    const { language, segments } = await transcribeWithWhisper(videoPath, { language: source_language });
+
+    const merged = [];
+    for (const s of segments) {
+      const prev = merged[merged.length - 1];
+      if (prev && s.start - prev.end < Number(min_gap) && s.end - s.start <= Number(max_len)) {
+        prev.end = Math.max(prev.end, s.end);
+        prev.text = `${prev.text} ${s.text}`.trim();
+      } else {
+        merged.push({ ...s });
+      }
+    }
+
+    const translated = await applySegmentsTranslation(merged, target_lang, language);
+    const ttsTmp = path.join(os.tmpdir(), `montaji_dub_${Date.now()}_${Math.round(Math.random() * 1e9)}`);
+    fs.mkdirSync(ttsTmp, { recursive: true });
+    for (let i = 0; i < translated.length; i++) {
+      const seg = translated[i];
+      if (!seg.text.trim()) continue;
+      const wav = path.join(ttsTmp, `seg_${i}.wav`);
+      await ttsToWav(seg.text, voice, wav);
+      tracks.push({ start: seg.start, path: wav });
+    }
+    if (!tracks.length) throw new Error('لم يُولَّد أي صوت (نص فارغ؟)');
+
+    const dubOut = path.join(ttsTmp, 'dubbed.mp4');
+    await dubVideo(videoPath, tracks, dubOut, { keepOriginal: Number(keep_original) });
+    const moved = moveToOutputs(dubOut, 'dubbed');
+    outputPath = moved.fname;
+
+    return res.json({
+      success: true, language, target_lang, voice,
+      segments: translated,
+      video_url: moved.output_url,
+      filename: moved.fname,
+    });
+  } catch (e) {
+    console.error('dub error:', e);
+    return res.status(500).json({ error: e.message || 'فشلت الدبلجة' });
+  } finally {
+    for (const t of tracks) { try { fs.unlinkSync(t.path); } catch {} }
   }
 });
 

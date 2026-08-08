@@ -1,0 +1,54 @@
+{
+  "youtube_video": {
+    "name": "فيديو يوتيوب",
+    "description": "مقاس 16:9 كلاسيكي مع ألوان دافئة ووضوح عالٍ",
+    "aspect": "16:9",
+    "color_style": "warm",
+    "text": null
+  },
+  "short_reels": {
+    "name": "شورت / ريلز",
+    "description": "مقاس عمودي 9:16 لمنصات يوتيوب شورت وتيك توك وانستغرام",
+    "aspect": "9:16",
+    "color_style": "cinematic",
+    "text": null
+  },
+  "story_square": {
+    "name": "مربع / ستوري",
+    "description": "مقاس مربع 1:1 مناسب لستوري انستغرام ومنشورات",
+    "aspect": "1:1",
+    "color_style": "vintage",
+    "text": null
+  },
+  "cinematic_film": {
+    "name": "سينمائي",
+    "description": "ألوان سينمائية مع حواف داكنة وتباين عالٍ",
+    "aspect": null,
+    "color_style": "cinematic",
+    "text": null
+  },
+  "wedding_golden": {
+    "name": "زفاف ذهبي",
+    "description": "ألوان ذهبية دافئة مثالية لمناسبات الأعراس",
+    "aspect": null,
+    "color_style": "golden",
+    "text": null
+  },
+  "retro_black_white": {
+    "name": "أبيض وأسود رجعي",
+    "description": "نمط كلاسيكي بالأبيض والأسود",
+    "aspect": null,
+    "color_style": "b_w",
+    "text": null
+  },
+  "title_overlay": {
+    "name": "نص عنوان",
+    "description": "يضيف عنواناً واضحاً على الفيديو (أرسل العنوان في params.text)",
+    "aspect": null,
+    "color_style": null,
+    "text": {
+      "position": "center",
+      "size": 80
+    }
+  }
+}
