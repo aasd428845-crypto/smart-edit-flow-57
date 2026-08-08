@@ -1,10 +1,9 @@
 /**
- * Export Service — handles video download and Vimeo upload
+ * Export Service — handles video download and local server upload
  * Centralized export logic with retry and error handling
  */
 
-import { supabase } from '@/integrations/supabase/client';
-import { UploadManager } from './upload-manager';
+import { getLocalApiUrl } from '@/store/editorStore';
 import { retryWithBackoff } from './network-utils';
 import { logError, classifyError } from './error-logger';
 
@@ -13,7 +12,7 @@ export type ExportStatus = 'idle' | 'preparing' | 'downloading' | 'uploading' | 
 export interface ExportCallbacks {
   onProgress: (percent: number) => void;
   onStatusChange: (status: ExportStatus) => void;
-  onSuccess: (result: { type: 'download' | 'vimeo'; url?: string }) => void;
+  onSuccess: (result: { type: 'download' | 'server'; url?: string }) => void;
   onError: (error: string) => void;
 }
 
@@ -71,11 +70,10 @@ export async function downloadVideo(videoUrl: string, callbacks: ExportCallbacks
 }
 
 /**
- * Upload video to Vimeo via TUS with full progress tracking
+ * Upload video to the local server with full progress tracking
  */
-export async function uploadToVimeo(
+export async function uploadToLocalServer(
   videoUrl: string,
-  projectId: string | null,
   callbacks: ExportCallbacks,
 ): Promise<void> {
   callbacks.onStatusChange('preparing');
@@ -84,56 +82,63 @@ export async function uploadToVimeo(
   try {
     // Step 1: Prepare file
     const res = await fetch(videoUrl);
+    if (!res.ok) throw new Error(`فشل قراءة الفيديو (${res.status})`);
     const blob = await res.blob();
     const file = new File([blob], `montaji_${Date.now()}.mp4`, { type: 'video/mp4' });
 
-    // Step 2: Get TUS ticket with retry
-    const ticketResult = await retryWithBackoff(
-      async () => {
-        const { data, error } = await supabase.functions.invoke('create-vimeo-ticket', {
-          body: { file_size: file.size, project_id: projectId || 'export', file_name: file.name },
-        });
-        if (error || !data?.upload_link) throw new Error(error?.message || 'فشل الحصول على رابط الرفع');
-        return data;
-      },
-      {
-        maxRetries: 2,
-        onRetry: (attempt, err) => {
-          logError('ExportService.vimeoTicket', err, { code: 'TICKET_RETRY', details: { attempt } });
-        },
-      },
-    );
-
-    // Step 3: TUS upload
+    // Step 2: Upload to local server with XHR progress
     callbacks.onStatusChange('uploading');
 
     return new Promise<void>((resolve, reject) => {
-      const manager = new UploadManager(
-        {
-          onProgress: (p) => callbacks.onProgress(p.percent),
-          onSuccess: (vimeoUrl) => {
+      const form = new FormData();
+      form.append('file', file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', getLocalApiUrl('/api/upload'));
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          callbacks.onProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
             callbacks.onStatusChange('completed');
             callbacks.onProgress(100);
-            callbacks.onSuccess({ type: 'vimeo', url: vimeoUrl });
+            callbacks.onSuccess({ type: 'server', url: data.url });
             resolve();
-          },
-          onError: (err) => {
-            const classified = classifyError(err);
-            logError('ExportService.tusUpload', err, { retryable: classified.retryable });
+          } catch (err) {
+            const e = err as Error;
+            logError('ExportService.localUpload', e, { retryable: false });
             callbacks.onStatusChange('failed');
-            callbacks.onError(classified.userMessage);
-            reject(err);
-          },
-          onStatusChange: () => {},
-        },
-        ticketResult.video_url,
-      );
+            callbacks.onError('استجابة غير صالحة من السيرفر');
+            reject(e);
+          }
+        } else {
+          const e = new Error(`فشل الرفع (${xhr.status})`);
+          logError('ExportService.localUpload', e, { retryable: false });
+          callbacks.onStatusChange('failed');
+          callbacks.onError(e.message);
+          reject(e);
+        }
+      };
 
-      manager.startUpload(file, ticketResult.upload_link);
+      xhr.onerror = () => {
+        const e = new Error('فشل الاتصال بالسيرفر المحلي');
+        logError('ExportService.localUpload', e, { retryable: false });
+        callbacks.onStatusChange('failed');
+        callbacks.onError(e.message);
+        reject(e);
+      };
+
+      xhr.send(form);
     });
   } catch (err: any) {
     const classified = classifyError(err);
-    logError('ExportService.vimeo', err, { retryable: classified.retryable });
+    logError('ExportService.localUpload', err, { retryable: classified.retryable });
     callbacks.onStatusChange('failed');
     callbacks.onError(classified.userMessage);
   }

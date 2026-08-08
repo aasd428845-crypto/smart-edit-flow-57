@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Play, Pause, Download, Upload, Check, RotateCcw, Maximize, X, Loader2, ExternalLink } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
 import { useEditorStore } from '@/store/editorStore';
-import { downloadVideo, uploadToVimeo, type ExportStatus } from '@/lib/export-service';
+import { downloadVideo, uploadToLocalServer, type ExportStatus } from '@/lib/export-service';
 import { toast } from 'sonner';
 
 interface PreviewPanelProps {
@@ -20,7 +20,7 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
   const [duration, setDuration] = useState(0);
   const [exportStatus, setExportStatus] = useState<ExportStatus>('idle');
   const [exportProgress, setExportProgress] = useState(0);
-  const [vimeoLink, setVimeoLink] = useState<string | null>(null);
+  const [serverLink, setServerLink] = useState<string | null>(null);
   const { projectId, addMessage } = useEditorStore();
 
   const togglePlay = () => {
@@ -53,14 +53,14 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
     });
   };
 
-  const handleUploadToVimeo = () => {
-    uploadToVimeo(fullQualityUrl, projectId, {
+  const handleUploadToServer = () => {
+    uploadToLocalServer(fullQualityUrl, {
       onProgress: setExportProgress,
       onStatusChange: setExportStatus,
       onSuccess: ({ url }) => {
-        setVimeoLink(url || null);
-        toast.success('✅ تم الرفع إلى Vimeo بنجاح!');
-        addMessage({ type: 'ai', text: `✅ تم رفع الفيديو إلى Vimeo!\n🔗 الرابط: ${url}` });
+        setServerLink(url || null);
+        toast.success('✅ تم حفظ الفيديو في السيرفر المحلي!');
+        addMessage({ type: 'ai', text: `✅ تم حفظ الفيديو في السيرفر المحلي!\n🔗 الرابط: ${url}` });
       },
       onError: (err) => {
         toast.error(err);
@@ -73,7 +73,7 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
     idle: '',
     preparing: '⏳ جارٍ التجهيز...',
     downloading: '⬇️ جارٍ التحميل...',
-    uploading: '⬆️ جارٍ الرفع إلى Vimeo...',
+    uploading: '⬆️ جارٍ الحفظ في السيرفر المحلي...',
     completed: '✅ تم بنجاح!',
     failed: '❌ فشلت العملية',
   };
@@ -137,13 +137,13 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
         </div>
       )}
 
-      {/* Vimeo link result */}
-      {vimeoLink && (
+      {/* Server link result */}
+      {serverLink && (
         <div className="px-4 py-3 bg-accent/10 border-t border-border flex items-center justify-between">
           <span className="text-sm text-foreground flex items-center gap-2">
-            🔗 <span className="font-mono text-xs truncate max-w-[200px]">{vimeoLink}</span>
+            🔗 <span className="font-mono text-xs truncate max-w-[200px]">{serverLink}</span>
           </span>
-          <a href={vimeoLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary text-sm hover:underline">
+          <a href={serverLink} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary text-sm hover:underline">
             فتح <ExternalLink size={14} />
           </a>
         </div>
@@ -171,11 +171,11 @@ export const PreviewPanel = ({ previewUrl, fullQualityUrl, onApprove, onReject, 
             <Download size={16} /> تحميل إلى الجهاز
           </button>
           <button
-            onClick={handleUploadToVimeo}
+            onClick={handleUploadToServer}
             disabled={isExporting}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl bg-accent text-accent-foreground text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            <Upload size={16} /> رفع إلى Vimeo
+            <Upload size={16} /> حفظ في السيرفر المحلي
           </button>
         </div>
       </div>

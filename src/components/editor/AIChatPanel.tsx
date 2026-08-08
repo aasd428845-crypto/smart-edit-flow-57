@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect } from 'react';
 import { Send, Paperclip, Activity, ChevronDown } from 'lucide-react';
-import { useEditorStore, statusMessages, getEdgeFunctionUrl } from '@/store/editorStore';
+import { useEditorStore, statusMessages, getLocalApiUrl } from '@/store/editorStore';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { MessageBubble } from './MessageBubble';
@@ -42,7 +42,7 @@ export const AIChatPanel = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch(getEdgeFunctionUrl('system-check'))
+    fetch(getLocalApiUrl('/api/health'))
       .then(res => { if (res.ok) setIsConnected(true); })
       .catch(() => setIsConnected(false));
   }, []);
@@ -150,7 +150,7 @@ export const AIChatPanel = () => {
 
     try {
       // Cloud AI with Tool Calling — AI decides which tool to invoke
-      const res = await fetch(getEdgeFunctionUrl('chat'), {
+      const res = await fetch(getLocalApiUrl('/api/chat'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -201,11 +201,11 @@ export const AIChatPanel = () => {
   const checkSystem = async () => {
     addMessage({ type: 'user', text: '🔍 فحص المنصة...' });
     try {
-      const cloudRes = await fetch(getEdgeFunctionUrl('system-check'));
+      const cloudRes = await fetch(getLocalApiUrl('/api/health'));
       const cloudOk = cloudRes.ok;
       setIsConnected(cloudOk);
 
-      const summary = `🖥️ حالة المنصة:\n☁️ Cloud AI: ${cloudOk ? '✅ متصل' : '❌ غير متصل'}\n🎞️ FFmpeg.wasm: ✅ مدمج في المتصفح\n📦 الأدوات: get_vimeo_info, transcribe, remove_background, executeVideoCommand (محلي)`;
+      const summary = `🖥️ حالة المنصة:\n☁️ الذكاء الاصطناعي: ${cloudOk ? '✅ متصل' : '❌ غير متصل'}\n🎞️ FFmpeg.wasm: ✅ مدمج في المتصفح\n📦 الأدوات: transcribe, remove_background, executeVideoCommand (محلي)`;
       addMessage({ type: 'ai', text: summary });
     } catch (err: any) {
       addMessage({ type: 'error', text: `⚠️ خطأ في الفحص: ${err?.message || 'غير معروف'}` });

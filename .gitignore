@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local server
+server/node_modules
+server/storage
+server/.env
+
+# Unrelated cloned project
+temp_repo/

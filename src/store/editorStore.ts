@@ -85,6 +85,12 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
 export const getEdgeFunctionUrl = (fn: string) => `${SUPABASE_URL}/functions/v1/${fn}`;
 
+export const getLocalApiUrl = (path = '') => {
+  const saved = localStorage.getItem('local_backend_url');
+  const url = (saved || import.meta.env.VITE_LOCAL_API_URL || 'http://localhost:8787').replace(/\/+$/, '');
+  return `${url}${path.startsWith('/') ? path : `/${path}`}`;
+};
+
 // Local backend URL — kept for backward compat but no longer used for video processing
 export const getLocalBackendUrl = () => {
   const saved = localStorage.getItem('local_backend_url');
