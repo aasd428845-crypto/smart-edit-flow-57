@@ -98,10 +98,11 @@ export async function ttsToWav(text, voice, outPath) {
 
 // Mix voice segments over the video at their subtitle start times.
 // tracks: [{ start (seconds), path (wav) }]
-export async function dubVideo(videoPath, tracks, outputPath, { keepOriginal = 0.15 } = {}) {
+export async function dubVideo(videoPath, tracks, outputPath, { keepOriginal = 0.15, musicPath, musicVolume = 0.2 } = {}) {
   if (!tracks?.length) throw new Error('لا توجد مقاطع صوتية للدمج');
   const inputs = ['-y', '-i', videoPath];
   for (const t of tracks) inputs.push('-i', t.path);
+  if (musicPath) inputs.push('-i', musicPath);
 
   const info = await probe(videoPath);
   const filterParts = [];
@@ -118,6 +119,12 @@ export async function dubVideo(videoPath, tracks, outputPath, { keepOriginal = 0
     filterParts.push(`[${voiceIdx}:a]adelay=${delayMs}:all=1[v${voiceIdx}]`);
     mixInputs.push(`[v${voiceIdx}]`);
     voiceIdx++;
+  }
+
+  if (musicPath) {
+    const musicIdx = voiceIdx;
+    filterParts.push(`[${musicIdx}:a]volume=${Number(musicVolume)},aloop=loop=-1:size=2e9[music]`);
+    mixInputs.push('[music]');
   }
 
   let mixFilter;

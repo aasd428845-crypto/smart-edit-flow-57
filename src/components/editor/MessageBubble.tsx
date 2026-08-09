@@ -13,8 +13,19 @@ export const MessageBubble = ({ msg, onSendMessage, onPreviewVideo }: MessageBub
 
   if (msg.type === 'status') {
     return (
-      <div className="mx-auto text-center animate-fade-in-up">
+      <div className="mx-auto text-center animate-fade-in-up w-full max-w-[80%]">
         <span className="text-muted-foreground text-xs">{msg.text}</span>
+        {typeof msg.progress === 'number' && msg.progress > 0 && (
+          <>
+            <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-gold transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.max(0, msg.progress))}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-primary font-mono">{Math.round(msg.progress)}%</span>
+          </>
+        )}
       </div>
     );
   }

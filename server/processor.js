@@ -1,12 +1,16 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 const execFileAsync = promisify(execFile);
+
+// Per-call options (duration + onProgress) for progress reporting.
+// Server serializes process actions, so a module-level slot is race-free.
+let RUN_OPTS = {};
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE = process.env.FFPROBE_PATH || 'ffprobe';
@@ -21,7 +25,41 @@ const FONT_NAME = process.env.ARABIC_FONT_NAME || 'Segoe UI';
 
 const TMP = os.tmpdir();
 
+// Run ffmpeg while streaming -progress output so we can report real percentages.
+function runWithProgress(args, duration, onProgress) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(FFMPEG, ['-hide_banner', '-nostats', ...args, '-progress', 'pipe:1']);
+    let buf = '';
+    child.stdout.on('data', (d) => {
+      buf += d.toString();
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        // ffmpeg reports out_time_us (some builds out_time_ms) in microseconds
+        if (line.startsWith('out_time_us=') || line.startsWith('out_time_ms=')) {
+          const us = parseInt(line.split('=')[1], 10);
+          if (Number.isFinite(us) && duration > 0) {
+            const pct = Math.min(99, Math.round((us / 1e6 / duration) * 100));
+            onProgress(pct);
+          }
+        }
+      }
+    });
+    child.stderr.on('data', () => {});
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg exited with code ${code}`));
+    });
+  });
+}
+
 async function run(args) {
+  const { duration, onProgress } = RUN_OPTS;
+  if (onProgress && duration > 0) {
+    await runWithProgress(args, duration, onProgress);
+    return;
+  }
   await execFileAsync(FFMPEG, args, { timeout: 900000, maxBuffer: 1024 * 1024 * 1024 });
 }
 
@@ -112,7 +150,8 @@ export function listTemplates() {
   return Object.entries(TEMPLATES).map(([id, t]) => ({ id, ...t }));
 }
 
-export async function processAction(action, files, params = {}) {
+export async function processAction(action, files, params = {}, opts = {}) {
+  RUN_OPTS = opts || {};
   const outExt = params.output_format || (action === 'extract_audio' ? 'mp3' : 'mp4');
   const output = tmpFile(outExt);
   const { videoPath, audioPath, imagePath, video2Path, imagePaths = [] } = files;
@@ -279,6 +318,83 @@ export async function processAction(action, files, params = {}) {
       const box = params.box === false ? '' : 'box=1:boxcolor=black@0.35:boxborderw=12';
       const dt = `drawtext=${ff}:text='${escapeDrawtext(text)}':fontsize=${size}:fontcolor=${fontcolor}:${box}:x=${x}:y=${y}`;
       await run(['-y', '-i', videoPath, '-vf', dt, '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'copy', '-movflags', '+faststart', output]);
+      break;
+    }
+
+    case 'remove_text': {
+      if (!videoPath) throw new Error('video required');
+      const info = await probe(videoPath);
+      const W = info.width || 1280;
+      const H = info.height || 720;
+      const method = params.method || 'blur'; // blur | delogo | box
+      const fill = params.fill || '#000000';
+
+      // Value 0..1 is a fraction of the dimension; larger values are pixels.
+      const px = (v, dim, dflt) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return Math.round(dflt);
+        if (n > 0 && n <= 1) return Math.round(n * dim);
+        return Math.round(n);
+      };
+
+      const presetMap = {
+        bottom: { x: 0.05, y: 0.82, w: 0.9, h: 0.13 },
+        top: { x: 0.1, y: 0.02, w: 0.8, h: 0.1 },
+        center: { x: 0.1, y: 0.3, w: 0.8, h: 0.4 },
+        full: { x: 0, y: 0, w: 1, h: 1 },
+      };
+
+      const regions = [];
+      if (Array.isArray(params.regions) && params.regions.length) {
+        for (const r of params.regions) {
+          const x = Math.max(0, px(r.x, W, 0));
+          const y = Math.max(0, px(r.y, H, 0));
+          const w = Math.max(1, Math.min(px(r.w, W, W), W - x));
+          const h = Math.max(1, Math.min(px(r.h, H, H), H - y));
+          regions.push({ x, y, w, h });
+        }
+      } else if (params.preset && presetMap[params.preset]) {
+        const p = presetMap[params.preset];
+        regions.push({
+          x: Math.round(p.x * W), y: Math.round(p.y * H),
+          w: Math.round(p.w * W), h: Math.round(p.h * H),
+        });
+      }
+      if (!regions.length) {
+        const p = presetMap.bottom;
+        regions.push({
+          x: Math.round(p.x * W), y: Math.round(p.y * H),
+          w: Math.round(p.w * W), h: Math.round(p.h * H),
+        });
+      }
+
+      let vf;
+      if (method === 'delogo') {
+        vf = regions.map((r) => `delogo=x=${r.x}:y=${r.y}:w=${r.w}:h=${r.h}:show=0`).join(',');
+        await run(['-y', '-i', videoPath, '-vf', vf, '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'copy', '-movflags', '+faststart', output]);
+      } else if (method === 'box') {
+        vf = regions.map((r) => `drawbox=x=${r.x}:y=${r.y}:w=${r.w}:h=${r.h}:color=${fill}@1:t=fill`).join(',');
+        await run(['-y', '-i', videoPath, '-vf', vf, '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'copy', '-movflags', '+faststart', output]);
+      } else {
+        // blur: split → crop → boxblur → overlay, chained per region
+        const parts = [];
+        let prev = '[0:v]';
+        for (let i = 0; i < regions.length; i++) {
+          const r = regions[i];
+          const rad = Math.max(2, Math.round(Math.min(r.w, r.h) / 24));
+          parts.push(`${prev}split[a${i}][b${i}]`);
+          parts.push(`[a${i}]crop=${r.w}:${r.h}:${r.x}:${r.y},boxblur=luma_radius=${rad}:luma_power=2[bl${i}]`);
+          parts.push(`[b${i}][bl${i}]overlay=${r.x}:${r.y}[vout${i}]`);
+          prev = `[vout${i}]`;
+        }
+        const fc = parts.join(';');
+        await run([
+          '-y', '-i', videoPath,
+          '-filter_complex', fc,
+          '-map', prev,
+          '-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'copy', '-movflags', '+faststart', output,
+        ]);
+      }
       break;
     }
 
@@ -450,6 +566,18 @@ export async function processAction(action, files, params = {}) {
       args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '20', '-c:a', 'copy', '-movflags', '+faststart', output);
       await run(args);
       break;
+    }
+
+    case 'preview': {
+      if (!videoPath) throw new Error('video required');
+      const args = [
+        '-y', '-i', videoPath,
+        '-vf', 'scale=-2:480',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28',
+        '-an', '-movflags', '+faststart', output,
+      ];
+      await run(args);
+      return { outputPath: output, action, info: { preview: true } };
     }
 
     default:

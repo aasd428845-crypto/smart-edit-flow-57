@@ -31,3 +31,7 @@ server/whisper
 
 # Unrelated cloned project
 temp_repo/
+Medlik-Waap/
+
+# OmniRoute local daemon
+omniroute.log.err

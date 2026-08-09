@@ -8,7 +8,7 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { processAction, listTemplates } from './processor.js';
+import { processAction, listTemplates, probe } from './processor.js';
 import { transcribeWithWhisper, ttsToWav, dubVideo, buildSRT, WHISPER_READY } from './speech.js';
 import crypto from 'crypto';
 
@@ -61,7 +61,7 @@ const tools = [
               'trim', 'denoise', 'speed', 'reverse', 'color_grade',
               'add_subtitles', 'montage', 'info', 'transcribe', 'rotate',
               'extract_audio', 'remove_audio', 'replace_audio', 'add_text',
-              'change_aspect', 'add_watermark', 'merge_videos', 'compress',
+              'remove_text', 'change_aspect', 'add_watermark', 'merge_videos', 'compress',
               'apply_template', 'slideshow',
             ],
             description: 'The video editing action to perform',
@@ -69,7 +69,7 @@ const tools = [
           params: {
             type: 'object',
             description:
-              'Parameters for the action. Examples: trim {start:0,end:30}; speed {factor:2}; color_grade {style:"golden"}; rotate {degrees:90}; add_subtitles {subtitles:[{start:0,end:5,text:"..."}]}; add_text {text:"العنوان",position:"center"}; change_aspect {aspect:"9:16"}; extract_audio {}; remove_audio {}; replace_audio {audio_url:"...",loop_audio:true}; add_watermark {image_url:"...",position:"bottom-right"}; merge_videos {video2_url:"...",transition:"fade"}; compress {quality:"medium"}; apply_template {template_id:"youtube_video"}; slideshow {images:[...],aspect:"16:9",duration_per_image:3}',
+              'Parameters for the action. Examples: trim {start:0,end:30}; speed {factor:2}; color_grade {style:"golden"}; rotate {degrees:90}; add_subtitles {subtitles:[{start:0,end:5,text:"..."}]}; add_text {text:"العنوان",position:"center"}; remove_text {preset:"bottom"} أو remove_text {regions:[{x,y,w,h}]} حيث القيم كسور 0-1 من الأبعاد، method:"blur"|"delogo"|"box"؛ change_aspect {aspect:"9:16"}; extract_audio {}; remove_audio {}; replace_audio {audio_url:"...",loop_audio:true}; add_watermark {image_url:"...",position:"bottom-right"}; merge_videos {video2_url:"...",transition:"fade"}; compress {quality:"medium"}; apply_template {template_id:"youtube_video"}; slideshow {images:[...],aspect:"16:9",duration_per_image:3}',
           },
         },
         required: ['action'],
@@ -169,6 +169,41 @@ const tools = [
             type: 'number',
             description: 'Original audio volume kept as background (0-1). Default 0.15',
           },
+          remove_original: {
+            type: 'boolean',
+            description: 'Set true to completely remove the original audio track (mutually exclusive with keep_original). Default false',
+          },
+          music_url: {
+            type: 'string',
+            description: 'Optional background music URL to mix under the dub at low volume',
+          },
+          music_volume: {
+            type: 'number',
+            description: 'Background music volume 0-1 (default 0.2)',
+          },
+        },
+          required: ['video_url'],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'analyze_video',
+      description:
+        'Analyze the visual content of a video (describe scenes, subjects, visible text, colors, people, setting, and overall topic) using AI vision on extracted frames. Use when the user asks "what is in the video", "حلل الفيديو", "شاهد الفيديو", "ماذا يظهر في الفيديو", "وصف الفيديو", or wants a visual description/analysis of the clip.',
+      parameters: {
+        type: 'object',
+        properties: {
+          video_url: {
+            type: 'string',
+            description: 'URL of the video to analyze',
+          },
+          question: {
+            type: 'string',
+            description: 'Optional specific question about the video content (e.g. "هل توجد نصوص ظاهرة؟")',
+          },
         },
         required: ['video_url'],
         additionalProperties: false,
@@ -180,10 +215,13 @@ const tools = [
 const systemPrompt = (project_context) => `أنت "مونتاجي AI" — مساعد ذكي متخصص في مونتاج الفيديو باللغة العربية.
 
 قواعد صارمة:
-- عندما يطلب المستخدم أي عملية مونتاج (قص، تسريع، عكس، تنقية صوت، تصحيح ألوان، ترجمة، مونتاج، معلومات، إزالة صوت، استخراج صوت، إضافة صوت، نص، ترجمات، تغيير مقاس، شعار مائي، دمج، ضغط، قالب، سلايدات، إلخ)، يجب أن تستدعي أداة executeVideoCommand فوراً.
+- عندما يطلب المستخدم أي عملية مونتاج (قص، تسريع، عكس، تنقية صوت، تصحيح ألوان، ترجمة، مونتاج، معلومات، إزالة صوت، استخراج صوت، إضافة صوت، نص، ترجمات، مسح/إزالة/حذف نصوص أو عناوين، تغيير مقاس، شعار مائي، دمج، ضغط، قالب، سلايدات، إلخ)، يجب أن تستدعي أداة executeVideoCommand فوراً دون أي تحليل أو سؤال مسبق.
+- عندما يطلب المستخدم مسح أو إخفاء أو حذف النصوص أو العناوين أو الترجمات المدمجة في الفيديو (مثل "امسح النصوص" أو "ازل النص من الفيديو" أو "حذف العنوان")، استدعِ executeVideoCommand فوراً بـ action:"remove_text" مع params {preset:"bottom"|"top"|"center"|"full"} أو {regions:[{x,y,w,h}]} وmethod:"blur"|"delogo"|"box" (الافتراضي blur). لا تستدعِ analyze_video أبداً لهذا الغرض.
 - عندما يطلب المستخدم تفريغ أو نسخ فيديو لنص، استدعِ أداة transcribe_video مع رابط الفيديو النشط.
 - عندما يطلب المستخدم ترجمة فيديو أو إضافة ترجمات مترجمة (عربية أو غيرها)، استدعِ أداة translate_subtitles مع رابط الفيديو النشط. إن طلب ترجمات مدمجة في الفيديو استخدم mode:"burn"، وإن طلب ملف ترجمات استخدم mode:"srt".
-- عندما يطلب المستخدم دبلجة الفيديو أو التحدث بصوت عربي بدلاً من الصوت الأصلي، استدعِ أداة dub_video مع رابط الفيديو النشط فوراً دون أي رد نصي.
+- عندما يطلب المستخدم دبلجة الفيديو أو التحدث بصوت عربي بدلاً من الصوت الأصلي، استدعِ أداة dub_video مع رابط الفيديو النشط. إن حدد المستخدم الخيارات (إزالة الصوت الأصلي، إضافة موسيقى، اللغة، الصوت) نفّذها مباشرة في معاملات الأداة دون سؤال.
+- عند طلب الدبلجة أو الترجمة دون تحديد الخيارات، اسأل سؤالاً واحداً مختصراً وانتظر رد المستخدم قبل استدعاء الأداة: بالنسبة للدبلجة اسأل "هل أزيل الصوت الأصلي أم أبقيه خافتاً؟ وهل أضيف موسيقى خلفية؟" وبالنسبة للترجمة اسأل "هل أحرق الترجمة في الفيديو أم أرسل ملف SRT؟ وما اللغة؟". لا تستدعِ الأداة قبل إجابة المستخدم.
+- عندما يسأل المستخدم عن محتوى الفيديو أو يطلب رؤيته أو وصفه أو تحليله (مثل "ماذا يظهر في الفيديو؟" أو "حلل الفيديو" أو "شاهد الفيديو")، استدعِ أداة analyze_video مع رابط الفيديو النشط. مهم: analyze_video مخصصة فقط للإجابة عن أسئلة "ماذا يظهر؟" في الفيديو — لا تستخدمها أبداً لتنفيذ أي تعديل أو مونتاج (مثل مسح نصوص)، ولا تستخدمها قبل تنفيذ عملية مونتاج.
 - عندما يطلب المستخدم إزالة خلفية صورة، استدعِ أداة remove_background.
 - لا تشرح كيفية القص أو المونتاج. لا تعطِ تعليمات نصية. فقط نفّذ الأداة.
 - إذا كان الطلب محادثة عادية أو سؤال لا يتعلق بتحرير فيديو، أجب نصياً بشكل مختصر.
@@ -202,6 +240,7 @@ const systemPrompt = (project_context) => `أنت "مونتاجي AI" — مسا
 - replace_audio: استبدال/إضافة صوت {audio_url, loop_audio}
 - add_subtitles: ترجمات مدمجة {subtitles:[{start,end,text}]} أو {srt:"..."}
 - add_text: نص على الفيديو {text, position, color}
+- remove_text: مسح/إخفاء النصوص المدمجة من الفيديو {preset:"bottom"|"top"|"center"|"full"} أو {regions:[{x,y,w,h}]} بقيم كسور 0-1 من الأبعاد، وmethod:"blur"|"delogo"|"box" (الافتراضي blur). استخدمه فوراً عندما يطلب المستخدم مسح أو إخفاء أو حذف نصوص أو عناوين أو ترجمات مدمجة في الفيديو.
 - change_aspect: تغيير المقاس {aspect: "9:16"|"16:9"|"1:1", fit}
 - add_watermark: شعار مائي {image_url, position, scale}
 - merge_videos: دمج فيديوهات {video2_url, transition}
@@ -519,12 +558,26 @@ app.get('/api/templates', (req, res) => {
   res.json({ success: true, templates: listTemplates() });
 });
 
-app.post('/api/process', async (req, res) => {
+// ---- Async processing jobs with real progress ----
+const jobs = new Map();
+const jobOrder = [];
+let runningJob = null;
+
+function createJob(body) {
+  const id = crypto.randomUUID();
+  const job = { id, body, status: 'queued', progress: 0, action: null, error: null, output_url: null, info: null, created: Date.now() };
+  jobs.set(id, job);
+  return job;
+}
+
+async function runProcessJob(job, body) {
   let outputPath = null;
   const cleanup = [];
   try {
-    const { action, video_url, audio_url, image_url, video2_url, images = [], params = {} } = req.body || {};
-    if (!action) return res.status(400).json({ error: 'action is required' });
+    const { action, video_url, audio_url, image_url, video2_url, images = [], params = {} } = body || {};
+    job.action = action;
+    job.status = 'processing';
+    job.progress = 1;
 
     const files = {};
     if (video_url) { files.videoPath = await downloadToCache(video_url); cleanup.push(files.videoPath); }
@@ -540,7 +593,16 @@ app.post('/api/process', async (req, res) => {
       }
     }
 
-    const result = await processAction(action, files, params);
+    let duration = 0;
+    if (files.videoPath) {
+      try { duration = (await probe(files.videoPath)).duration || 0; } catch {}
+    }
+    job.progress = 5;
+
+    const result = await processAction(action, files, params, {
+      duration,
+      onProgress: (p) => { job.progress = Math.round(5 + p * 0.93); },
+    });
 
     if (result.outputPath) {
       const ext = result.outputPath.split('.').pop();
@@ -548,25 +610,167 @@ app.post('/api/process', async (req, res) => {
       outputPath = path.join(OUTPUT_DIR, fname);
       fs.renameSync(result.outputPath, outputPath);
       cleanup.push(outputPath);
-      return res.json({
-        success: true,
-        action,
-        output_url: `${PUBLIC_URL}/outputs/${fname}`,
-        filename: fname,
-        info: result.info || null,
-      });
+      job.output_url = `${PUBLIC_URL}/outputs/${fname}`;
+      job.info = result.info || null;
+      job.progress = 100;
+      job.status = 'completed';
+    } else {
+      job.status = 'completed';
+      job.progress = 100;
+      job.info = result.info || null;
     }
-
-    return res.json({ success: true, action, info: result.info, output_url: null });
   } catch (e) {
-    console.error('process error:', e);
-    return res.status(500).json({ error: e.message || 'فشلت المعالجة' });
+    console.error('process job error:', e);
+    job.status = 'failed';
+    job.error = e.message || 'فشلت المعالجة';
   } finally {
     // Keep cache files, clean up temp/output files that are not the returned output
     for (const p of cleanup) {
       if (p && p !== outputPath && !p.includes(CACHE_DIR)) {
         try { fs.unlinkSync(p); } catch {}
       }
+    }
+  }
+}
+
+// Run jobs one at a time (avoids CPU thrash and races on the progress hook)
+async function pumpJobs() {
+  while (jobOrder.length && !runningJob) {
+    const id = jobOrder.shift();
+    const job = jobs.get(id);
+    if (!job) continue;
+    runningJob = job;
+    try { await runProcessJob(job, job.body); } finally { runningJob = null; }
+  }
+}
+
+app.post('/api/process', (req, res) => {
+  try {
+    const body = req.body || {};
+    if (!body.action) return res.status(400).json({ error: 'action is required' });
+    const job = createJob(body);
+    jobOrder.push(job.id);
+    pumpJobs();
+    res.json({ success: true, job_id: job.id, status: job.status, action: body.action });
+  } catch (e) {
+    console.error('process create error:', e);
+    res.status(500).json({ error: e.message || 'فشل إنشاء المهمة' });
+  }
+});
+
+app.get('/api/jobs/:id', (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+  res.json({
+    id: job.id,
+    status: job.status,
+    progress: job.progress,
+    action: job.action,
+    output_url: job.output_url,
+    info: job.info,
+    error: job.error,
+  });
+});
+
+// Import a file directly from a local path on the server machine (instant for huge raw footage).
+app.post('/api/import-local', (req, res) => {
+  try {
+    const { path: filePath } = req.body || {};
+    if (!filePath || typeof filePath !== 'string') return res.status(400).json({ error: 'path is required' });
+    const resolved = path.resolve(String(filePath).trim());
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+      return res.status(400).json({ error: 'الملف غير موجود على هذا الجهاز' });
+    }
+    const ext = (resolved.split('.').pop() || 'mp4').toLowerCase().replace(/[^\w]/g, '');
+    const allowed = ['mp4', 'mov', 'mkv', 'avi', 'webm', 'm4v', 'mpg', 'mpeg', 'wmv', 'flv', 'ts'];
+    if (!allowed.includes(ext)) {
+      return res.status(400).json({ error: `امتداد غير مدعوم: .${ext}` });
+    }
+    const base = path.basename(resolved).replace(/[^\w.\-\u0600-\u06FF]+/g, '_');
+    const fname = `${Date.now()}_${base}`;
+    const dest = path.join(UPLOAD_DIR, fname);
+    fs.copyFileSync(resolved, dest);
+    res.json({
+      success: true,
+      url: `${PUBLIC_URL}/uploads/${fname}`,
+      filename: fname,
+      size: fs.statSync(dest).size,
+    });
+  } catch (e) {
+    console.error('import-local error:', e);
+    res.status(500).json({ error: e.message || 'فشل استيراد الملف' });
+  }
+});
+
+const VISION_MODELS = (process.env.VISION_MODELS || 'google/gemini-3.1-flash-lite:free,google/gemini-3.1-flash-lite,google/gemini-2.5-flash-lite')
+  .split(',')
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('انتهت مهلة استدعاء نموذج الرؤية')), ms)),
+  ]);
+}
+
+app.post('/api/analyze-video', async (req, res) => {
+  const tmpFiles = [];
+  try {
+    const { video_url, question } = req.body || {};
+    if (!video_url) return res.status(400).json({ error: 'video_url is required' });
+
+    const videoPath = await downloadToCache(video_url);
+    let dur = 0;
+    try { dur = (await probe(videoPath)).duration || 0; } catch {}
+    if (!dur || dur <= 0) dur = 10;
+
+    const cuts = [0.05, 0.25, 0.5, 0.75, 0.95].map((f) => Math.min(Math.max(0, dur - 0.1), f * dur));
+    const frames = [];
+    for (let i = 0; i < cuts.length; i++) {
+      const out = path.join(os.tmpdir(), `montaji_frame_${Date.now()}_${i}.jpg`);
+      tmpFiles.push(out);
+      try {
+        await execFileAsync('ffmpeg', ['-y', '-ss', String(cuts[i]), '-i', videoPath, '-frames:v', '1', '-vf', 'scale=720:-2', '-q:v', '6', out], { timeout: 60000, maxBuffer: 64 * 1024 * 1024 });
+        if (fs.existsSync(out) && fs.statSync(out).size > 0) {
+          frames.push(`data:image/jpeg;base64,${fs.readFileSync(out).toString('base64')}`);
+        }
+      } catch {}
+    }
+    if (!frames.length) throw new Error('تعذر استخراج لقطات من الفيديو');
+
+    const textPrompt = question && String(question).trim()
+      ? `حلل الفيديو من اللقطات التالية وأجب عن هذا السؤال بالعربية بإيجاز: ${String(question).trim()}`
+      : 'حلل هذا الفيديو من اللقطات المستخرجة: صف بالعربية ما يظهر (الأشخاص، المشاهد، النصوص الظاهرة، الألوان، الإعداد، الموضوع العام). كن موجزاً ومنظماً.';
+    const content = [{ type: 'text', text: textPrompt }];
+    for (const f of frames) content.push({ type: 'image_url', image_url: { url: f } });
+
+    let lastError = null;
+    for (const model of VISION_MODELS) {
+      try {
+        const data = await withTimeout(chatCompletion({ model, messages: [{ role: 'user', content }] }), 25000);
+        const text = data.choices?.[0]?.message?.content || '';
+        if (text.trim()) return res.json({ success: true, analysis: text, frames: frames.length });
+      } catch (e) {
+        lastError = e;
+        const fb = gatewayFallback();
+        if (fb && fb.key && (e.cause?.code === 'ECONNREFUSED' || e.cause?.code === 'ECONNRESET' || e.cause?.code === 'ENOTFOUND' || e.message?.includes('fetch failed'))) {
+          try {
+            const fbData = await withTimeout(chatCompletion({ model, messages: [{ role: 'user', content }], preferredBase: fb.base, preferredKey: fb.key, preferredHeaders: fb.headers, preferredLabel: fb.label }), 25000);
+            const fbText = fbData.choices?.[0]?.message?.content || '';
+            if (fbText.trim()) return res.json({ success: true, analysis: fbText, frames: frames.length, gateway: 'fallback' });
+          } catch (e2) { lastError = e2; }
+        }
+        if (e.status !== 429 && e.status !== 404 && e.status !== 503 && e.status !== 402 && e.status !== 400) break;
+      }
+    }
+    throw lastError || new Error('فشل تحليل الفيديو');
+  } catch (e) {
+    console.error('analyze-video error:', e);
+    res.status(500).json({ error: e.message || 'فشل تحليل الفيديو' });
+  } finally {
+    for (const p of tmpFiles) {
+      try { fs.unlinkSync(p); } catch {}
     }
   }
 });
@@ -701,6 +905,7 @@ app.post('/api/dub', async (req, res) => {
     const {
       video_url, target_lang = 'ar', voice = DUB_VOICE,
       source_language, keep_original = 0.15, min_gap = 0.15, max_len = 4,
+      remove_original, music_url, music_volume,
     } = req.body || {};
     if (!video_url) return res.status(400).json({ error: 'video_url is required' });
     if (!WHISPER_READY) return res.status(500).json({ error: 'Whisper غير مهيأ على الخادم' });
@@ -731,8 +936,14 @@ app.post('/api/dub', async (req, res) => {
     }
     if (!tracks.length) throw new Error('لم يُولَّد أي صوت (نص فارغ؟)');
 
+    const dubOpts = { keepOriginal: remove_original ? 0 : Number(keep_original) };
+    if (music_url && typeof music_url === 'string' && music_url.trim()) {
+      const musicPath = await downloadToCache(music_url.trim(), 'music');
+      dubOpts.musicPath = musicPath;
+      if (music_volume != null) dubOpts.musicVolume = Number(music_volume);
+    }
     const dubOut = path.join(ttsTmp, 'dubbed.mp4');
-    await dubVideo(videoPath, tracks, dubOut, { keepOriginal: Number(keep_original) });
+    await dubVideo(videoPath, tracks, dubOut, dubOpts);
     const moved = moveToOutputs(dubOut, 'dubbed');
     outputPath = moved.fname;
 

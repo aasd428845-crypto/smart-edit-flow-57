@@ -4,7 +4,6 @@
  */
 
 import { processVideo, type FFmpegAction, type ProcessResult } from './ffmpeg-processor';
-import { generatePreview } from './preview-generator';
 import { logError, classifyError } from './error-logger';
 import { retryWithBackoff } from './network-utils';
 
@@ -25,6 +24,7 @@ export interface ProcessingJob {
 
 export interface ProcessingCallbacks {
   onStatusChange: (job: ProcessingJob) => void;
+  onProgress?: (p: number) => void;
   onMessage: (type: 'status' | 'ai' | 'error' | 'execution_result', text: string, extra?: Record<string, any>) => void;
 }
 
@@ -64,34 +64,49 @@ export async function executeJob(
   callbacks.onMessage('status', `⏳ جارٍ تنفيذ "${action}" عبر محرك المعالجة...`);
 
   try {
-    // Step 1: Process video
-    update({ status: 'processing', progress: 10 });
-    const result = await processVideo(action, videoSource, params);
+    // Step 1: Process video (server-side job with real progress)
+    update({ status: 'processing', progress: 5 });
+    const result = await processVideo(action, videoSource, params, (p) => {
+      // Map server progress (0-100) into the processing stage (5-55)
+      update({ status: 'processing', progress: 5 + Math.round(Math.min(100, Math.max(0, p)) * 0.5) });
+      callbacks.onProgress?.(p);
+    });
 
-    if (!result.success || !result.outputUrl) {
+    if (!result.success) {
       update({ status: 'failed', error: result.message });
       callbacks.onMessage('error', result.message);
       logError('ProcessingService', result.message, { code: 'PROCESSING_FAILED', details: { action, params } });
       return job;
     }
 
+    // Actions without an output file (e.g. info) — complete with the message directly
+    if (!result.outputUrl) {
+      update({ status: 'completed', progress: 100, result });
+      callbacks.onMessage('ai', result.message, { action });
+      return job;
+    }
+
     update({ status: 'generating_preview', progress: 60, fullQualityUrl: result.outputUrl, result });
 
-    // Step 2: Generate preview
+    // Step 2: Server-side 480p preview (fast, same engine). Never fatal —
+    // if it fails (e.g. audio-only output), fall back to the full result.
     callbacks.onMessage('status', '🔄 جارٍ إنشاء معاينة سريعة...');
-    const preview = await generatePreview(result.outputUrl, (p) => {
-      update({ progress: 60 + Math.round(p * 0.35) });
-    });
-
-    if (preview.success) {
-      update({ status: 'completed', progress: 100, previewUrl: preview.previewUrl });
-      callbacks.onMessage('execution_result', `${result.message}\n\n👁️ تم إنشاء معاينة — راجع النتيجة قبل التصدير.`, {
-        outputUrl: result.outputUrl,
-        action,
+    try {
+      const preview = await processVideo('preview', result.outputUrl, {}, (p) => {
+        update({ progress: 60 + Math.round(Math.min(100, Math.max(0, p)) * 0.35) });
       });
-    } else {
-      // Fallback: no preview, still successful
-      update({ status: 'completed', progress: 100 });
+      if (preview.success && preview.outputUrl) {
+        update({ status: 'completed', progress: 100, previewUrl: preview.outputUrl });
+        callbacks.onMessage('execution_result', `${result.message}\n\n👁️ تم إنشاء معاينة — راجع النتيجة قبل التصدير.`, {
+          outputUrl: result.outputUrl,
+          action,
+        });
+      } else {
+        update({ status: 'completed', progress: 100, previewUrl: result.outputUrl });
+        callbacks.onMessage('execution_result', result.message, { outputUrl: result.outputUrl, action });
+      }
+    } catch {
+      update({ status: 'completed', progress: 100, previewUrl: result.outputUrl });
       callbacks.onMessage('execution_result', result.message, { outputUrl: result.outputUrl, action });
     }
 

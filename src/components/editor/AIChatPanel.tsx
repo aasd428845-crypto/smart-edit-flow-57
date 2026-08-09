@@ -26,6 +26,7 @@ const quickSuggestions = [
   { label: '🔄 اعكس', message: 'اعكس الفيديو' },
   { label: '📐 عمودي 9:16', message: 'غيّر المقاس إلى 9:16 لشورت وتيك توك' },
   { label: '🏷️ نص على الفيديو', message: 'أضف نصاً على الفيديو في المنتصف' },
+  { label: '🗑️ امسح النصوص', message: 'امسح النصوص المدمجة في أسفل الفيديو' },
   { label: '🎵 استخرج الصوت', message: 'استخرج الصوت من الفيديو كملف MP3' },
   { label: '🔇 احذف الصوت', message: 'احذف الصوت من الفيديو' },
   { label: '✨ قالب سينمائي', message: 'طبق قالب سينمائي' },
@@ -36,14 +37,14 @@ const quickSuggestions = [
 
 const VALID_ACTIONS: FFmpegAction[] = [
   'trim', 'speed', 'reverse', 'denoise', 'color_grade', 'montage', 'info', 'add_subtitles', 'transcribe', 'rotate',
-  'extract_audio', 'remove_audio', 'replace_audio', 'add_text',
+  'extract_audio', 'remove_audio', 'replace_audio', 'add_text', 'remove_text',
   'change_aspect', 'add_watermark', 'merge_videos', 'compress',
   'apply_template', 'slideshow',
 ];
 
 export const AIChatPanel = () => {
   const {
-    messages, addMessage, projectId, videoSource, sourceType,
+    messages, addMessage, updateMessage, projectId, videoSource, sourceType,
     currentTime, selectedTemplate, contentType, setProjectStatus,
     cinematicMode, selectedAgent, setSelectedAgent, setVideoSource,
     setPreviewUrl, setFullQualityUrl, setPreviewGenerating, setPreviewProgress, setShowPreview,
@@ -53,6 +54,7 @@ export const AIChatPanel = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [showAgentMenu, setShowAgentMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const toolRetryRef = useRef(false);
 
   useEffect(() => {
     fetch(getLocalApiUrl('/api/health'))
@@ -105,11 +107,19 @@ export const AIChatPanel = () => {
       return;
     }
 
+    const statusId = addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ "${action}" عبر محرك المعالجة...` });
+
     const job = await executeJob(action as FFmpegAction, videoSource, params, {
+      onProgress: (p) => {
+        updateMessage(statusId, {
+          progress: Math.round(p),
+          text: `⏳ جارٍ تنفيذ "${action}"... ${Math.round(p)}%`,
+        });
+      },
       onStatusChange: (j) => {
         if (j.fullQualityUrl) {
           setFullQualityUrl(j.fullQualityUrl);
-          setVideoSource(j.fullQualityUrl, 'blob');
+          setVideoSource(j.fullQualityUrl, 'remote');
         }
         if (j.previewUrl) {
           setPreviewUrl(j.previewUrl);
@@ -118,17 +128,28 @@ export const AIChatPanel = () => {
         }
         setPreviewGenerating(j.status === 'generating_preview');
         setPreviewProgress(j.progress);
+        if (j.status === 'completed') {
+          updateMessage(statusId, { progress: 100, text: `✅ اكتمل "${action}" بنجاح` });
+        }
+        if (j.status === 'failed') {
+          updateMessage(statusId, { text: `❌ فشل "${action}"` });
+        }
       },
       onMessage: (type, text, extra) => {
+        if (type === 'status') {
+          updateMessage(statusId, { text });
+          return;
+        }
         addMessage({ type, text, ...(extra || {}) } as any);
       },
     });
   };
 
-  // Handle tool calls from Cloud AI
-  const handleToolCalls = async (toolCalls: Array<{ name: string; arguments: any }>) => {
+  // Handle tool calls from Cloud AI. Returns list of failure messages.
+  const handleToolCalls = async (toolCalls: Array<{ name: string; arguments: any }>): Promise<string[]> => {
+    const failures: string[] = [];
     for (const tc of toolCalls) {
-      // Client-side tools (Vimeo info, transcribe, remove bg)
+      // Client-side tools (Vimeo info, transcribe, remove bg, vision, dub, translate)
       if (toolHandlers[tc.name]) {
         addMessage({ type: 'status', text: `⏳ جارٍ تنفيذ: ${tc.name}... (قد يستغرق دقيقة أو أكثر)` });
         try {
@@ -143,15 +164,20 @@ export const AIChatPanel = () => {
             if (data.srt) {
               addMessage({ type: 'ai', text: `📝 الترجمة:\n\n${data.srt}` });
             }
+            if (data.analysis) {
+              addMessage({ type: 'ai', text: `🎥 تحليل الفيديو:\n\n${data.analysis}` });
+            }
             const summary = Object.entries(data)
-              .filter(([k, v]) => k !== 'srt' && k !== 'segments' && k !== 'video_url' && v != null)
+              .filter(([k, v]) => k !== 'srt' && k !== 'segments' && k !== 'video_url' && k !== 'analysis' && v != null)
               .map(([k, v]) => `• **${k}**: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join('\n');
             if (summary) addMessage({ type: 'ai', text: `✅ نتيجة ${tc.name}:\n\n${summary}` });
           } else {
             addMessage({ type: 'error', text: `❌ فشل ${tc.name}: ${result.error}` });
+            failures.push(`${tc.name}: ${result.error}`);
           }
         } catch (err: any) {
           addMessage({ type: 'error', text: `⚠️ خطأ في ${tc.name}: ${err?.message || 'غير معروف'}` });
+          failures.push(`${tc.name}: ${err?.message || 'غير معروف'}`);
         }
         continue;
       }
@@ -162,6 +188,7 @@ export const AIChatPanel = () => {
         await executeLocalVideoCommand(action, params);
       }
     }
+    return failures;
   };
 
   const sendMessage = async (text: string) => {
@@ -169,6 +196,43 @@ export const AIChatPanel = () => {
     addMessage({ type: 'user', text });
     setInput('');
     setIsLoading(true);
+    toolRetryRef.current = false;
+
+    const buildPayload = (message: string) => ({
+      message,
+      agent: selectedAgent,
+      conversation_history: messages.slice(-10).map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.text })),
+      project_context: { video_source: videoSource, source_type: sourceType, project_id: projectId, current_time: currentTime, template_id: selectedTemplate?.id, content_type: contentType, cinematic: cinematicMode },
+    });
+
+    const runRetry = async (errorText: string) => {
+      if (toolRetryRef.current) return;
+      toolRetryRef.current = true;
+      try {
+        addMessage({ type: 'status', text: '🔄 أحاول مرة أخرى بالأداة الصحيحة...' });
+        const res = await fetch(getLocalApiUrl('/api/chat'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(buildPayload(`فشلت الأداة السابقة بالخطأ: ${errorText}. الرجاء إعادة المحاولة بالأداة الصحيحة مباشرة لتنفيذ طلب المستخدم: "${text}". لا تعيد نفس الأداة الفاشلة.`)),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          addMessage({ type: 'error', text: `⚠️ خطأ في إعادة المحاولة: ${data.error || data.detail || res.statusText}` });
+          return;
+        }
+        if (data.tool_calls?.length) {
+          const failures = await handleToolCalls(data.tool_calls);
+          if (data.reply) addMessage({ type: 'ai', text: data.reply });
+          if (failures.length) {
+            addMessage({ type: 'error', text: `⚠️ فشلت إعادة المحاولة أيضاً: ${failures.join(' | ')}` });
+          }
+        } else if (data.reply) {
+          addMessage({ type: 'ai', text: data.reply });
+        }
+      } catch (err: any) {
+        addMessage({ type: 'error', text: `❌ خطأ في إعادة المحاولة: ${err?.message || 'غير معروف'}` });
+      }
+    };
 
     try {
       // Cloud AI with Tool Calling — AI decides which tool to invoke
@@ -196,10 +260,13 @@ export const AIChatPanel = () => {
 
       // Handle tool_calls from AI
       if (data.tool_calls?.length) {
-        await handleToolCalls(data.tool_calls);
+        const failures = await handleToolCalls(data.tool_calls);
         // If there's also a reply along with tool calls, show it
         if (data.reply) {
           addMessage({ type: 'ai', text: data.reply });
+        }
+        if (failures.length) {
+          await runRetry(failures.join(' | '));
         }
         return;
       }

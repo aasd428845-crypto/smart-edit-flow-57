@@ -7,9 +7,9 @@ let loaded = false;
 
 export type FFmpegAction =
   | 'trim' | 'speed' | 'reverse' | 'denoise' | 'color_grade' | 'montage' | 'info' | 'add_subtitles' | 'transcribe' | 'rotate'
-  | 'extract_audio' | 'remove_audio' | 'replace_audio' | 'add_text'
+  | 'extract_audio' | 'remove_audio' | 'replace_audio' | 'add_text' | 'remove_text'
   | 'change_aspect' | 'add_watermark' | 'merge_videos' | 'compress'
-  | 'apply_template' | 'slideshow';
+  | 'apply_template' | 'slideshow' | 'preview';
 export interface ProcessResult {
   success: boolean;
   outputUrl?: string;
@@ -51,6 +51,7 @@ export async function processVideo(
   action: FFmpegAction,
   videoSource: string,
   params: Record<string, any> = {},
+  onProgress?: (p: number) => void,
 ): Promise<ProcessResult> {
   // Primary path: server-side FFmpeg engine (full feature set: Arabic text, subtitles,
   // audio replace, aspect change, watermarks, merging, templates, slideshows...)
@@ -71,7 +72,26 @@ export async function processVideo(
       body: JSON.stringify(body),
     });
     const data = await res.json();
-    if (!res.ok || !data.success) throw new Error(data.error || `فشلت المعالجة (${res.status})`);
+    if (!res.ok) throw new Error(data.error || `فشلت المعالجة (${res.status})`);
+
+    // Async job: poll /api/jobs/:id until the server finishes, reporting real progress
+    if (data.job_id) {
+      let jobData: any = null;
+      for (let i = 0; i < 1200; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const jr = await fetch(getLocalApiUrl(`/api/jobs/${data.job_id}`));
+        if (!jr.ok) throw new Error(`فشل متابعة المهمة (${jr.status})`);
+        jobData = await jr.json();
+        onProgress?.(jobData.progress ?? 0);
+        if (jobData.status === 'completed') break;
+        if (jobData.status === 'failed') throw new Error(jobData.error || 'فشلت المعالجة');
+      }
+      if (!jobData || jobData.status !== 'completed') {
+        throw new Error('انتهت مهلة المعالجة');
+      }
+      data.output_url = jobData.output_url;
+      data.info = jobData.info;
+    }
 
     if (action === 'info') {
       return { success: true, message: `📊 معلومات الفيديو:\n\n${formatInfo(data.info)}`, info: data.info };

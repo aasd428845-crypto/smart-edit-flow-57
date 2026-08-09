@@ -8,6 +8,7 @@ export interface ChatMessage {
   text: string;
   timestamp: Date;
   status?: 'processing' | 'completed' | 'failed';
+  progress?: number;
   outputUrl?: string;
   diffLog?: string[];
   nextSteps?: string[];
@@ -77,7 +78,8 @@ interface EditorState {
   setPreviewProgress: (p: number) => void;
   setShowPreview: (s: boolean) => void;
   setSelectedAgent: (a: string) => void;
-  addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
+  addMessage: (m: Omit<ChatMessage, 'id' | 'timestamp'>) => string;
+  updateMessage: (id: string, patch: Partial<Omit<ChatMessage, 'id' | 'timestamp'>>) => void;
   clearMessages: () => void;
 }
 
@@ -155,12 +157,19 @@ export const useEditorStore = create<EditorState>((set) => ({
   setPreviewProgress: (p) => set({ previewProgress: p }),
   setShowPreview: (s) => set({ showPreview: s }),
   setSelectedAgent: (a) => set({ selectedAgent: a }),
-  addMessage: (m) =>
+  addMessage: (m) => {
+    const id = crypto.randomUUID();
     set((state) => ({
       messages: [
         ...state.messages,
-        { ...m, id: crypto.randomUUID(), timestamp: new Date() },
+        { ...m, id, timestamp: new Date() },
       ],
+    }));
+    return id;
+  },
+  updateMessage: (id, patch) =>
+    set((state) => ({
+      messages: state.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
     })),
   clearMessages: () =>
     set({
